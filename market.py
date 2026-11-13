@@ -1,0 +1,85 @@
+"""Recherche et informations de marché Yahoo Finance, via yfinance."""
+import datetime
+import math
+import re
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+import yfinance as yf
+
+class MarketError(Exception):
+    pass
+
+def num(value):
+    try:
+        n = float(value)
+        return n if math.isfinite(n) else None
+    except (TypeError, ValueError):
+        return None
+
+def date_utc(value):
+    try:
+        return datetime.datetime.fromtimestamp(int(value), datetime.timezone.utc).date().isoformat()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+def quote_date(value, timezone):
+    if not timezone:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(int(value), ZoneInfo(timezone)).date().isoformat()
+    except (TypeError, ValueError, OverflowError, OSError, ZoneInfoNotFoundError):
+        return None
+
+def search(term):
+    if not isinstance(term, str) or not 1 <= len(term.strip()) <= 80:
+        raise MarketError('Saisissez un nom ou symbole (80 caractères maximum).')
+    try:
+        rows = yf.Search(term.strip(), max_results=10, news_count=0, lists_count=0,
+                         include_cb=False, recommended=0, timeout=12, raise_errors=True).quotes
+    except Exception:
+        raise MarketError('Recherche Yahoo Finance indisponible. Réessayez plus tard.') from None
+    if not isinstance(rows, list):
+        raise MarketError('Réponse de recherche Yahoo Finance invalide.')
+    return [{'symbol': r['symbol'], 'name': r.get('shortname') or r.get('longname') or r['symbol'],
+             'type': r.get('quoteType'), 'region': r.get('exchDisp') or r.get('exchange'),
+             'currency': r.get('currency')} for r in rows if isinstance(r, dict) and isinstance(r.get('symbol'),str) and r['symbol']]
+
+def company(symbol):
+    if not isinstance(symbol, str) or not re.fullmatch(r'[A-Za-z0-9.\-^=]{1,32}', symbol):
+        raise MarketError('Symbole invalide.')
+    symbol = symbol.upper()
+    try:
+        info = yf.Ticker(symbol).get_info()
+    except Exception:
+        raise MarketError('Yahoo Finance indisponible ou quota atteint. Réessayez plus tard.') from None
+    if not isinstance(info, dict) or str(info.get('symbol', '')).upper() != symbol:
+        raise MarketError('Fiche Yahoo Finance introuvable pour ce symbole.')
+    price = num(info.get('regularMarketPrice'))
+    if price is not None and price <= 0:
+        price = None
+    day = quote_date(info.get('regularMarketTime'), info.get('exchangeTimezoneName'))
+    warnings = []
+    if price is None or day is None:
+        # A date is essential to identify stale quotes and avoid valuing holdings with undated data.
+        price = None
+        warnings.append('Cours ou date de cotation indisponible.')
+    currency = info.get('currency')
+    if not isinstance(currency, str) or not currency:
+        currency = None
+        warnings.append('Devise de cotation indisponible ; position non valorisée.')
+    fields = {'marketCap':'marketCap', 'revenue':'totalRevenue', 'ebitda':'ebitda',
+              'eps':'trailingEps', 'pe':'trailingPE', 'operatingMargin':'operatingMargins',
+              'profitMargin':'profitMargins', 'roe':'returnOnEquity', 'shares':'sharesOutstanding',
+              'bookValue':'bookValue', 'evEbitda':'enterpriseToEbitda'}
+    metrics = {key:num(info.get(name)) for key,name in fields.items()}
+    # Yahoo's dividendYield is quoted in percentage points; UI expects a fractional ratio.
+    dividend = num(info.get('dividendYield'))
+    metrics['dividendYield'] = dividend / 100 if dividend is not None else None
+    return {'symbol':symbol, 'name':info.get('longName') or info.get('shortName') or symbol,
+            'description':info.get('longBusinessSummary') or None, 'sector':info.get('sector') or None,
+            'industry':info.get('industry') or None, 'country':info.get('country') or None,
+            'currency':currency, 'financialCurrency':info.get('financialCurrency') or None,
+            'price':price, 'priceDate':day, 'priceTimestamp':date_utc(info.get('regularMarketTime')),
+            'fiscalYearEnd':date_utc(info.get('lastFiscalYearEnd')),
+            'latestQuarter':date_utc(info.get('mostRecentQuarter')), 'metrics':metrics,
+            'warnings':warnings, 'source':'Yahoo Finance (yfinance)',
+            'fetchedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}

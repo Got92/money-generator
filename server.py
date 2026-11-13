@@ -2,7 +2,8 @@
 import json, os, sqlite3, threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
+import market
 
 ROOT = Path(__file__).resolve().parent
 DB = Path(os.environ.get('ATLAS_DB', Path.home() / '.atlas-investment' / 'atlas.sqlite3')).expanduser()
@@ -37,8 +38,14 @@ class Handler(SimpleHTTPRequestHandler):
         if path=='/api/state':
             with connect() as db: row=db.execute('SELECT revision,payload FROM state WHERE id=1').fetchone()
             return self.respond(200, {'revision':row[0], 'data':json.loads(row[1])} if row else {'revision':0,'data':None})
+        if path in ('/api/market/search','/api/market/company'):
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                result=market.search(params.get('q',[''])[0]) if path.endswith('/search') else market.company(params.get('symbol',[''])[0])
+                return self.respond(200,{'data':result})
+            except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path.startswith('/api/'): return self.respond(404,{'error':'Introuvable'})
-        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js'): return self.send_error(404)
+        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js'): return self.send_error(404)
         super().do_GET()
     def do_PUT(self):
         if self.path!='/api/state': return self.respond(404,{'error':'Introuvable'})
