@@ -77,6 +77,7 @@ def company(symbol):
     return {'symbol':symbol, 'name':info.get('longName') or info.get('shortName') or symbol,
             'description':info.get('longBusinessSummary') or None, 'sector':info.get('sector') or None,
             'industry':info.get('industry') or None, 'country':info.get('country') or None,
+            'assetClass':info.get('quoteType') if isinstance(info.get('quoteType'), str) and info.get('quoteType').strip() else None,
             'currency':currency, 'financialCurrency':info.get('financialCurrency') or None,
             'price':price, 'priceDate':day, 'priceTimestamp':date_utc(info.get('regularMarketTime')),
             'fiscalYearEnd':date_utc(info.get('lastFiscalYearEnd')),

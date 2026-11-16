@@ -1,0 +1,12 @@
+import {calculateAllocation} from './allocation.js';
+const assetLabels={EQUITY:'Actions',ETF:'ETF',MUTUALFUND:'Fonds communs',BOND:'Obligations',CURRENCY:'Devises',CRYPTOCURRENCY:'Cryptomonnaies',FUTURE:'Contrats à terme',OPTION:'Options',INDEX:'Indices'};
+export function renderAllocation({positions,cashEntries,field,basis,esc,money}) {
+ const result=calculateAllocation(positions,cashEntries,field,basis);
+ if(result.status==='missing')return '<p class="muted">Allocation indisponible : cours ou taux de change manquant pour la base choisie.</p>';
+ if(result.status==='nonpositive')return '<p class="muted">Allocation indisponible : la valeur de la base choisie est nulle ou négative.</p>';
+ return result.groups.map((g,i)=>{const label=g.cash?'Liquidités':g.category===null?'Non renseigné':field==='assetClass'?(assetLabels[g.category]||g.category):g.category;return `<div class="allocation"><span><i style="background:${['#a6e9c5','#789de2','#dbbb85','#aab4c5'][i%4]}"></i>${esc(label)}</span><b>${(g.weight*100).toFixed(1)} %</b></div>${g.weight>=0&&g.weight<=1?`<div class="track"><span style="width:${g.weight*100}%"></span></div>`:''}<small class="muted">${money(g.value)}</small>`}).join('')||'<p class="muted">Aucune allocation disponible.</p>';
+}
+export function renderAnalytics({header,positions,cashEntries,basis,esc,money}) {
+ const fields=[['sector','Secteur'],['industry','Industrie'],['currency','Devise de cotation'],['country','Pays du profil'],['assetClass','Classe d’actifs']];
+ return header('ANALYSE','Analytics & Risk','Comprendre la composition de vos investissements.')+`<section class="card section"><label>Base de calcul <select id="allocationBasis" aria-label="Base de calcul de l’allocation"><option value="invested" ${basis==='invested'?'selected':''}>Positions investies uniquement</option><option value="total" ${basis==='total'?'selected':''}>Positions et liquidités</option></select></label><p class="muted">Les valeurs sont converties en EUR. Les liquidités négatives réduisent le total et peuvent donner des poids négatifs ou supérieurs à 100 %. La devise de cotation et le pays du profil ne représentent pas nécessairement l’exposition économique. Les fonds ne sont pas analysés par transparence.</p></section><div class="grid">${fields.map(([field,label])=>`<section class="card"><h2>Allocation par ${label.toLowerCase()}</h2>${renderAllocation({positions,cashEntries,field,basis,esc,money})}</section>`).join('')}</div>`;
+}
