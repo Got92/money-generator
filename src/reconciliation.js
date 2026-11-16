@@ -21,13 +21,13 @@ export function reconcile({data,portfolioId,quotes={},rates=[],statement,toleran
   const p=byTicker.get(ticker),b=broker.get(ticker),held=p?.quantity||0, brokerQty=b?.quantity??(statement.positionsComplete?0:null);
   add('Quantité',ticker,held,brokerQty,tolerances.quantity,'Transaction manquante, opération sur titres ou correspondance de ticker à vérifier.');
   if(held>1e-9||brokerQty>1e-9){
-   const basisKnown=tx.filter(t=>t.ticker===ticker&&['buy','sell'].includes(t.type)).every(t=>fxRate(rates,t.settlementCurrency||t.currency||'EUR','EUR',t.date,7)!==null);
+   const basisKnown=tx.filter(t=>t.ticker===ticker&&['buy','sell','opening'].includes(t.type)).every(t=>fxRate(rates,t.settlementCurrency||t.currency||'EUR','EUR',t.date,7)!==null);
    add('PRU EUR',ticker,basisKnown?(p?.average??null):null,b?.averageEUR??null,tolerances.money,'Devise, frais inclus, taux historique ou méthode de PRU à vérifier.');
    const q=eligible[ticker],fx=q?fxRate(rates,q.currency,'EUR',q.priceDate,7):null;
    const value=p&&q&&fx!==null?p.quantity*q.price*fx:null;
    add('Valeur EUR',ticker,value,b?.valueEUR??null,tolerances.money,'Cours, date de valorisation, devise ou taux de change absent ou différent.');
   }
-  if(Math.abs(p?.realized||0)>1e-9||b?.realizedEUR!=null||(b&&b.quantity===0)){if(b?.realizedEUR!=null)number(b.realizedEUR,'Plus-value réalisée');const basisKnown=tx.filter(t=>t.ticker===ticker&&['buy','sell'].includes(t.type)).every(t=>fxRate(rates,t.settlementCurrency||t.currency||'EUR','EUR',t.date,7)!==null);add('Gain réalisé EUR',ticker,basisKnown?(p?.realized??0):null,b?.realizedEUR??null,tolerances.money,'Ventes, frais, taux historiques et méthode de PRU à vérifier.')}
+  if(Math.abs(p?.realized||0)>1e-9||b?.realizedEUR!=null||(b&&b.quantity===0)){if(b?.realizedEUR!=null)number(b.realizedEUR,'Plus-value réalisée');const basisKnown=tx.filter(t=>t.ticker===ticker&&['buy','sell','opening'].includes(t.type)).every(t=>fxRate(rates,t.settlementCurrency||t.currency||'EUR','EUR',t.date,7)!==null);add('Gain réalisé EUR',ticker,basisKnown?(p?.realized??0):null,b?.realizedEUR??null,tolerances.money,'Ventes, frais, taux historiques et méthode de PRU à vérifier.')}
   {
    const q=quotes[ticker],registered=(data.instrumentRegistry||[]).find(x=>p?.instrumentId?x.id===p.instrumentId:x.ticker===ticker);
    const identity={isin:registered?.isin||q?.isin,exchange:registered?.exchange||q?.exchange};

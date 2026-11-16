@@ -41,6 +41,7 @@ export function performanceSeries(transactions,portfolioId,prices,rates,endDate=
  validateTransactions(portfolioTx);
  if(cashMode!=='multi'&&portfolioTx.some(t=>t.type==='exchange'))throw Error('Un change nécessite des soldes par devise.');
  const tx=portfolioTx.filter(t=>t.date<=endDate).slice().sort((a,b)=>a.date.localeCompare(b.date));
+ if(tx.some(t=>t.type==='opening'))return {points:[],xirr:null,xirrReason:'Historique incomplet : position initiale, performance depuis l’origine indisponible.'};
  if(!tx.length)return {points:[],xirr:null,xirrReason:'Aucune transaction dans la période.'};
  const indexed=indexBy(prices,r=>r.ticker,'price',true),fx=indexBy(rates,r=>r.from+'/'+r.to,'rate');
  const holdings=new Map(),flows=[],points=[],balances={};

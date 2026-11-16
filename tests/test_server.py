@@ -340,3 +340,18 @@ class InstrumentIdentityTest(StorageTest):
         self.assertEqual(self.request()[1]['data']['transactions'][0]['instrumentId'],a['instrumentId'])
         self.assertEqual(self.request('PUT',{'revision':result['revision'],'data':before})[0],200)
         reloaded=self.request()[1]['data'];self.assertEqual(reloaded['transactions'][0]['instrumentId'],a['instrumentId']);self.assertEqual(next(x for x in reloaded['instrumentRegistry'] if x['id']==ident['id'])['exchange'],'NASDAQ')
+
+    def test_opening_position_chronology_and_backup_roundtrip(self):
+        data={'portfolios':[{'id':'p','name':'P','currency':'EUR'}], 'watchlist':[], 'transactions':[
+            {'id':'opening','portfolioId':'p','date':'2026-11-01','type':'opening','ticker':'TEST','currency':'EUR','quantity':5,'price':100},
+            {'id':'sale','portfolioId':'p','date':'2026-11-02','type':'sell','ticker':'TEST','currency':'EUR','quantity':3,'price':110}]}
+        self.assertEqual(self.request('PUT',{'revision':0,'data':data})[0],200)
+        saved=self.request()[1];self.assertEqual(saved['data']['transactions'][0]['type'],'opening')
+        invalid=json.loads(json.dumps(saved['data']));invalid['transactions'][0]['quantity']=2
+        self.assertEqual(self.request('PUT',{'revision':saved['revision'],'data':invalid})[0],400)
+        invalid=json.loads(json.dumps(saved['data']));invalid['transactions'].append({**data['transactions'][0],'id':'second','date':'2026-11-03'})
+        self.assertEqual(self.request('PUT',{'revision':saved['revision'],'data':invalid})[0],400)
+        with urllib.request.urlopen(self.url.replace('/api/state','/api/backup')) as response: backup=response.read()
+        request=urllib.request.Request(self.url.replace('/api/state','/api/backup/restore'),data=backup,method='PUT',headers={'Content-Type':'application/vnd.sqlite3','X-Atlas-Revision':str(saved['revision'])})
+        with urllib.request.urlopen(request) as response: self.assertEqual(response.status,200)
+        self.assertEqual(self.request()[1]['data']['transactions'],saved['data']['transactions'])

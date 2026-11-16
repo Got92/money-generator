@@ -74,10 +74,10 @@ try{
  await page.waitForFunction(()=>document.querySelector('#fxStatus')?.textContent.includes('Panne de test'));
  assert.match(await page.locator('#fxStatus').textContent(),/fraîcheur non confirmée/);
 
- await page.locator('#addTx').click();
+ await page.locator('#addTx').click();await page.locator('#modal [data-kind=deposit]').click();
  await page.locator('#modal [name="type"]').selectOption('deposit');
  await page.locator('#modal [name="amount"]').fill('10');
- await page.locator('#modal [value="save"]').click();
+ await page.locator('#reviewTransaction').click();await page.locator('#confirmTransaction').click();
  await page.waitForFunction(()=>!document.querySelector('#modal')?.open);
  const saved=await (await page.request.get(url+'/api/state')).json();
  assert.equal(saved.revision,initial.revision+1);
