@@ -1,3 +1,4 @@
+import {advancedValuationForm} from './advanced-valuation-ui.js';
 import {scenarioForm} from './scenario-ui.js';
 import {historicalValuationSection} from './historical-valuation-ui.js';
 import {qualitySection} from './quality-ui.js';
