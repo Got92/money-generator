@@ -139,19 +139,32 @@ class Handler(SimpleHTTPRequestHandler):
         if path=='/api/fundamentals/quality':
             params=parse_qs(urlsplit(self.path).query)
             try:
-                symbol=params.get('symbol',[''])[0]
+                symbol=params.get('symbol',[''])[0].upper()
                 as_of=params.get('asOf',[None])[0]
-                history=fundamental_history.get(symbol,'annual',False,as_of)
-                with connect() as db:
-                    row=db.execute('SELECT payload FROM instruments WHERE ticker=?',(symbol.upper(),)).fetchone()
-                profile=json.loads(row[0]) if row and as_of is None else None
-                from fundamental_metrics import calculate_fundamentals
-                ratios=calculate_fundamentals(history['data'],period='annual',profile=profile)
-                sector=ratios.get('methodology',{}).get('sectorType','unknown')
-                result=quality_score.score_company(ratios,quality_config.weights(),sector)
-                result.update({'symbol':symbol.upper(),'asOf':as_of,'fetch':history['fetch'],
-                    'history':{'data':[],'reason':'Historique indisponible sans dates de disponibilité et versions calculées à chaque date.'},
-                    'peers':{'data':[],'reason':'Aucun échantillon de scores sectoriels comparables persisté.'}})
+                if not re.fullmatch(r'[A-Z0-9.\-^=]{1,32}',symbol): raise ValueError('Symbole invalide.')
+                if as_of is not None: fundamental_store._date(as_of)
+                entries=quality_config.history(symbol,as_of)
+                if as_of:
+                    if entries:
+                        result=dict(entries[-1]['result']); profile=entries[-1]['provenance']['profile']; computed_at=entries[-1]['computedAt']
+                    else:
+                        result=quality_score.score_company([],quality_config.weights(),'unknown'); profile=None; computed_at=None
+                else:
+                    history=fundamental_history.get(symbol,'annual',False,None)
+                    with connect() as db:
+                        row=db.execute('SELECT payload FROM instruments WHERE ticker=?',(symbol,)).fetchone()
+                    profile=json.loads(row[0]) if row else None
+                    from fundamental_metrics import calculate_fundamentals
+                    ratios=calculate_fundamentals(history['data'],period='annual',profile=profile)
+                    sector=ratios.get('methodology',{}).get('sectorType','unknown')
+                    result=quality_score.score_company(ratios,quality_config.weights(),sector)
+                    result['fetch']=history['fetch']
+                    computed_at=quality_config.capture(symbol,result,profile,history['data'])
+                    entries=quality_config.history(symbol)
+                peers=quality_config.peers(symbol,profile['sector'],result['methodologyVersion'],result['weights'],as_of) if profile and profile.get('sector') and computed_at else []
+                result.update({'symbol':symbol,'asOf':as_of,'computedAt':computed_at,
+                    'history':{'data':entries,'reason':None if entries else 'Aucun score capturé disponible à cette date ; les publications historiques inconnues ne permettent pas de reconstitution.'},
+                    'peers':{'data':peers,'sampleSize':len(peers),'reason':None if peers else 'Aucun pair persisté comparable pour ce secteur et ces pondérations.'}})
                 return self.respond(200,result)
             except ValueError as e: return self.respond(400,{'error':str(e)})
         if path=='/api/fundamentals/history':
