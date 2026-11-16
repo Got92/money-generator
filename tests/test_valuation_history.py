@@ -63,5 +63,20 @@ class ValuationTests(unittest.TestCase):
     def test_invalid_symbol_and_date(self):
         with self.assertRaises(ValueError): self.store.get('x/../')
         with self.assertRaises(ValueError): self.store.get('SYN','2024-99-01')
+    def test_verified_ttm_values_support_all_derived_multiples(self):
+        p=self.profile(); p['priceDate']=dt.date.today().isoformat()
+        p['metrics'].update(marketCap=2000,enterpriseValue=2100)
+        point={'periodEnd':'2025-12-31','metrics':{
+            'free_cash_flow':{'value':150,'unit':'currency','currency':'USD'},
+            'ebit':{'value':200,'unit':'currency','currency':'USD'}}}
+        values=vh.snapshot(p,point)['values']
+        self.assertAlmostEqual(values['ev_ebit'],10.5)
+        self.assertAlmostEqual(values['price_fcf'],2000/150)
+        self.assertAlmostEqual(values['ev_fcf'],14)
+        self.assertAlmostEqual(values['fcf_yield'],.075)
+        point['metrics']['free_cash_flow']['currency']='EUR'
+        self.assertNotIn('fcf_yield',vh.snapshot(p,point)['values'])
+        point['periodEnd']='2999-01-01'
+        self.assertNotIn('ev_ebit',vh.snapshot(p,point)['values'])
 
 if __name__=='__main__': unittest.main()
