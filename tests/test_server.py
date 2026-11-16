@@ -43,15 +43,22 @@ class StorageTest(unittest.TestCase):
         data['transactions'][0]['quantity']=1
         self.assertEqual(self.request('PUT',{'revision':1,'data':data})[0],400)
         self.assertEqual(self.request()[1]['data']['transactions'][0]['quantity'],2)
-    def test_history_is_returned_without_server_storage(self):
+    def test_history_survives_new_http_connections_and_cache_instance(self):
         base=self.url.rsplit('/api/state',1)[0]
         row={'ticker':'IBM','date':'2024-01-02','price':120,'currency':'USD'}
         with patch.object(server.market,'price_history',return_value=[row]) as provider:
             for _ in range(2):
                 with urllib.request.urlopen(base+'/api/market/history?symbol=IBM') as response: self.assertEqual(json.load(response)['data'][0]['price'],120)
-            self.assertEqual(provider.call_count,2)
-        self.assertFalse(server.DB.exists())
-    def test_existing_history_removed_and_never_saved(self):
+            self.assertEqual(provider.call_count,1)
+            with patch.object(server,'history_cache',server.history_store.HistoryCache(server.connect)):
+                with urllib.request.urlopen(base+'/api/market/history?symbol=IBM') as response:
+                    body=json.load(response)
+                    self.assertEqual(body['cache']['observations'],1)
+                    self.assertEqual(body['data'][0]['source'],'Yahoo Finance (yfinance)')
+            self.assertEqual(provider.call_count,1)
+        with server.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM prices').fetchone()[0],1)
+    def test_existing_history_preserved_on_migration_and_state_save(self):
         data={'portfolios':[{'id':'p','name':'P','currency':'EUR'}],'transactions':[],'watchlist':[],'fxRates':[{'from':'USD','to':'EUR','date':'2024-01-01','rate':0.9}]}
         with sqlite3.connect(server.DB) as db:
             db.execute('CREATE TABLE state (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL)')
@@ -61,9 +68,31 @@ class StorageTest(unittest.TestCase):
         self.assertNotIn('fxRates',self.request()[1]['data'])
         self.assertEqual(self.request('PUT',{'revision':1,'data':data})[0],200)
         with sqlite3.connect(server.DB) as db:
-            self.assertEqual(db.execute('SELECT count(*) FROM prices').fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT count(*) FROM prices').fetchone()[0],1)
             self.assertEqual(db.execute('SELECT count(*) FROM fx_rates').fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT rate FROM fx_observations').fetchone()[0],0.9)
+            self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0],1)
             self.assertNotIn('fxRates',json.loads(db.execute('SELECT payload FROM state').fetchone()[0]))
+    def test_api_refresh_failure_and_invalid_symbols(self):
+        base=self.url.rsplit('/api/state',1)[0]
+        def get(path):
+            try:
+                with urllib.request.urlopen(base+path) as r:return r.status,json.load(r)
+            except urllib.error.HTTPError as e:return e.code,json.load(e)
+        row={'from':'USD','to':'EUR','date':'2024-01-01','rate':0.9}
+        with patch.object(server.market,'fx_history',return_value=[row]) as provider, patch.object(server.market,'price_history',side_effect=server.market.MarketError('Panne.')):
+            self.assertEqual(get('/api/market/fx?from=USD&to=EUR')[0],200)
+            self.assertEqual(get('/api/market/fx?from=USD&to=EUR')[0],200)
+            self.assertEqual(provider.call_count,1)
+            provider.side_effect=server.market.MarketError('Quota atteint.')
+            status,body=get('/api/market/fx?from=USD&to=EUR&refresh=1')
+            self.assertEqual(status,200)
+            self.assertEqual(body['data'][0]['rate'],0.9)
+            self.assertEqual(body['cache']['status'],'stale')
+            self.assertIn('Quota',body['cache']['warning'])
+            self.assertEqual(get('/api/market/history?symbol=INVALID&refresh=1')[0],503)
+        for path in ('/api/market/history?symbol=bad%26symbol','/api/market/fx?from=USD&to=USD'):
+            self.assertEqual(get(path)[0],400)
     def test_exchange_requires_multicurrency_account(self):
         data={'portfolios':[{'id':'p','name':'P','currency':'EUR','cashMode':'multi'}], 'transactions':[{'id':'x','portfolioId':'p','date':'2024-01-02','type':'exchange','currency':'EUR','amount':90,'targetCurrency':'USD','targetAmount':100}], 'watchlist':[]}
         self.assertEqual(self.request('PUT',{'revision':0,'data':data})[0],200)

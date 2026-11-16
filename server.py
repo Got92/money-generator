@@ -4,6 +4,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 import market
+import history_store
 
 ROOT = Path(__file__).resolve().parent
 DB = Path(os.environ.get('ATLAS_DB', Path.home() / '.atlas-investment' / 'atlas.sqlite3')).expanduser()
@@ -12,6 +13,7 @@ lock = threading.Lock()
 
 def connect():
     db = sqlite3.connect(DB)
+    db.execute('BEGIN IMMEDIATE')
     db.execute('CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, payload TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS prices (ticker TEXT NOT NULL, date TEXT NOT NULL, price REAL NOT NULL, currency TEXT NOT NULL, provider TEXT NOT NULL, fetched_at TEXT NOT NULL, PRIMARY KEY(ticker,date,provider))')
     db.execute('CREATE TABLE IF NOT EXISTS portfolios (id TEXT PRIMARY KEY, ordinal INTEGER NOT NULL, payload TEXT NOT NULL)')
@@ -22,22 +24,16 @@ def connect():
     db.execute('CREATE TABLE IF NOT EXISTS fx_rates (source_currency TEXT NOT NULL, target_currency TEXT NOT NULL, date TEXT NOT NULL, rate REAL NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(source_currency,target_currency,date))')
     db.execute('CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
     with db:
+        history_store.migrate(db)
         if not db.execute("SELECT 1 FROM schema_meta WHERE key='normalized_v1'").fetchone():
             row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
             if row: write_collections(db,json.loads(row[0]))
             db.execute("INSERT INTO schema_meta VALUES('normalized_v1','1')")
-        if not db.execute("SELECT 1 FROM schema_meta WHERE key='ephemeral_history_v1'").fetchone():
-            db.execute('DELETE FROM prices')
-            db.execute('DELETE FROM fx_rates')
-            row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
-            if row:
-                state=json.loads(row[0]); state.pop('fxRates',None)
-                db.execute('UPDATE state SET payload=? WHERE id=1',(json.dumps(state,ensure_ascii=False,allow_nan=False),))
-            db.execute("INSERT INTO schema_meta VALUES('ephemeral_history_v1','1')")
     return db
 
 def write_collections(db, data):
-    for table in ('portfolios','transactions','instruments','fundamentals','watchlists','fx_rates'): db.execute('DELETE FROM '+table)
+    for table in ('portfolios','transactions','instruments','fundamentals','watchlists'): db.execute('DELETE FROM '+table)
+    history_store.import_fx(db, data.get('fxRates', []))
     dump=lambda x: json.dumps(x,ensure_ascii=False,allow_nan=False)
     db.executemany('INSERT INTO portfolios VALUES(?,?,?)',[(p['id'],i,dump(p)) for i,p in enumerate(data.get('portfolios',[]))])
     db.executemany('INSERT INTO transactions VALUES(?,?,?,?)',[(t['id'],t['portfolioId'],i,dump(t)) for i,t in enumerate(data.get('transactions',[]))])
@@ -101,6 +97,8 @@ def valid(data):
         except (ValueError,TypeError,KeyError): raise ValueError('Taux de change invalide.') from None
     if not isinstance(data.get('marketData',{}),dict): raise ValueError('Données de marché invalides.')
 
+history_cache = history_store.HistoryCache(connect)
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw): super().__init__(*a,directory=str(ROOT),**kw)
     def respond(self,status,payload):
@@ -114,7 +112,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.respond(200,result)
         if path=='/api/market/history':
             params=parse_qs(urlsplit(self.path).query)
-            try: return self.respond(200,{'data':market.price_history(params.get('symbol',[''])[0])})
+            try: return self.respond(200,history_cache.prices(params.get('symbol',[''])[0],params.get('refresh',['0'])[0]=='1',params.get('full',['0'])[0]=='1'))
+            except ValueError as e: return self.respond(400,{'error':str(e)})
             except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path=='/api/market/intraday':
             params=parse_qs(urlsplit(self.path).query)
@@ -122,7 +121,8 @@ class Handler(SimpleHTTPRequestHandler):
             except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path=='/api/market/fx':
             params=parse_qs(urlsplit(self.path).query)
-            try: return self.respond(200,{'data':market.fx_history(params.get('from',[''])[0],params.get('to',[''])[0])})
+            try: return self.respond(200,history_cache.fx(params.get('from',[''])[0],params.get('to',[''])[0],params.get('refresh',['0'])[0]=='1',params.get('full',['0'])[0]=='1'))
+            except ValueError as e: return self.respond(400,{'error':str(e)})
             except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path in ('/api/market/search','/api/market/company'):
             params=parse_qs(urlsplit(self.path).query)
@@ -140,12 +140,13 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             length=int(self.headers.get('Content-Length','0'))
             if length<=0 or length>5_000_000: raise ValueError('Taille de sauvegarde invalide.')
-            obj=json.loads(self.rfile.read(length)); data=obj['data']; valid(data); data={k:v for k,v in data.items() if k!='fxRates'}; revision=obj['revision']
+            obj=json.loads(self.rfile.read(length)); data=obj['data']; valid(data); revision=obj['revision']
             with lock, connect() as db:
                 row=db.execute('SELECT revision FROM state WHERE id=1').fetchone(); current=row[0] if row else 0
                 if revision!=current: return self.respond(409,{'error':'Les données ont changé dans un autre onglet. Rechargez avant de modifier.'})
                 new=current+1
                 write_collections(db,data)
+                data={k:v for k,v in data.items() if k!='fxRates'}
                 db.execute('INSERT INTO state(id,revision,payload) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload',(new,json.dumps({**data,'portfolios':[],'transactions':[],'watchlist':[],**({'marketData':{}} if 'marketData' in data else {}),**({'fxRates':[]} if 'fxRates' in data else {})},ensure_ascii=False,allow_nan=False)))
             self.respond(200,{'revision':new})
         except (ValueError,KeyError,TypeError,json.JSONDecodeError) as e: self.respond(400,{'error':str(e)})
