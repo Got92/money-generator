@@ -30,8 +30,10 @@ try {
  for(const k of ['per','forward_per','ev_ebitda','price_sales','ev_ebit','price_fcf','ev_fcf','fcf_yield'])assert.equal(history.metrics[k].count,1,k);
  assert.equal(history.metrics.fcf_yield.current.value,.075);
  const scenario={name:'Base',method:'FCFF',projectionMode:'growth',initialFcf:150,years:Array.from({length:5},()=>({growth:.1})),discount:.1,terminalGrowth:.02,postYear5Growth:.02,netDebt:100,shares:100,marginOfSafety:.2,currency:'EUR',unit:'EUR'};
- assert.equal((await page.request.put(url+'/api/valuation/scenarios?symbol=SYNTHCO',{data:scenario})).status(),200);
- assert.equal((await page.request.put(url+'/api/portfolio/targets',{data:{portfolioId:'integration',basis:'total',targets:[{dimension:'position',key:'SYNTHCO',min:.05,target:.2,max:.4}]}})).status(),200);
+ const scenarioRevision=(await get('/api/valuation/scenarios?symbol=SYNTHCO')).revision;
+ assert.equal((await page.request.put(url+'/api/valuation/scenarios?symbol=SYNTHCO',{data:{...scenario,revision:scenarioRevision}})).status(),200);
+ const targetRevision=await get('/api/portfolio/targets?portfolioId=integration');
+ assert.equal((await page.request.put(url+'/api/portfolio/targets',{data:{portfolioId:'integration',basis:'total',targets:[{dimension:'position',key:'SYNTHCO',min:.05,target:.2,max:.4}],revision:targetRevision.revision,token:targetRevision.token}})).status(),200);
  await page.goto(url);await page.locator('.nav[data-page="Portefeuilles"]').click();await page.locator('[data-target-row]').waitFor();
  assert.equal(await page.locator('[data-field="target"]').inputValue(),'20');
  await page.locator('[data-page="Watchlist"]').click();await page.locator('[data-company="SYNTHCO"]').click();

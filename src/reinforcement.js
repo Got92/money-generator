@@ -1,8 +1,9 @@
+import {localToday} from './calendar.js';
 import {positions,validateTransactions,cashBalances,cashValue,cashBalance,fxRate} from './finance.js';
 
 // Amount is the total budget including fees; quantity is fractional when necessary.
 export function simulateReinforcement({transactions,portfolioId,portfolio,quotes={},rates=[],ticker,amount,quantity,price,currency,fee=0,date,targets,scenarios,evaluateScenario}){
- const n=v=>Number(v), today=new Date().toISOString().slice(0,10);
+ const n=v=>Number(v), today=localToday();
  if(!portfolio||portfolio.id!==portfolioId||portfolio.currency!=='EUR')throw Error('Portefeuille EUR valide requis.');
  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||date>today)throw Error('Date de simulation présente ou passée requise.');
  if(!ticker||!/^[A-Z]{3}$/.test(currency||'')||!Number.isFinite(n(price))||n(price)<=0||!Number.isFinite(n(fee))||n(fee)<0)throw Error('Titre, prix, devise et frais valides requis.');

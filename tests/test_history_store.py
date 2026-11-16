@@ -163,7 +163,7 @@ class HistoryTest(unittest.TestCase):
             db.executemany('INSERT INTO schema_meta VALUES(?,?)', [('normalized_v1','1'),('ephemeral_history_v1','1')])
         with closing(server.connect()) as db:
             self.assertEqual(db.execute('SELECT name FROM schema_migrations').fetchone()[0], 'durable_history_v1')
-            self.assertEqual(db.execute('SELECT count(*) FROM schema_meta').fetchone()[0], 2)
+            self.assertEqual(db.execute("SELECT count(*) FROM schema_meta WHERE key IN ('normalized_v1','ephemeral_history_v1')").fetchone()[0], 2)
 
     def test_failed_migration_rolls_back_without_touching_legacy_payload(self):
         old = {'portfolios':[], 'transactions':[], 'watchlist':[], 'unknown':'preserved'}

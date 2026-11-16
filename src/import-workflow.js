@@ -1,7 +1,8 @@
 import {validateTransactions} from './finance.js';
-export const IMPORT_FIELDS=['date','type','ticker','quantity','price','fee','amount','currency','targetCurrency','targetAmount','ratio','quantityDelta','note'];
+export const IMPORT_FIELDS=['date','type','ticker','quantity','price','fee','amount','currency','targetCurrency','targetAmount','ratio','quantityDelta','note','brokerRef','sourceIsin','settlementCurrency','settlementAmount','settlementFee'];
 const TYPES={buy:'buy',achat:'buy',sell:'sell',vente:'sell',deposit:'deposit',depot:'deposit',withdrawal:'withdrawal',retrait:'withdrawal',dividend:'dividend',dividende:'dividend',exchange:'exchange',change:'exchange',split:'split',adjustment:'adjustment',correction:'adjustment'};
 const normal=s=>String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[\s_\-]/g,'');
+function validIsin(value){if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(value))return false;const digits=[...value].map(c=>/[A-Z]/.test(c)?String(c.charCodeAt(0)-55):c).join('');return [...digits].reverse().reduce((sum,c,i)=>{const n=Number(c)*(i%2?2:1);return sum+Math.floor(n/10)+n%10},0)%10===0}
 export function guessColumns(headers){return Object.fromEntries(IMPORT_FIELDS.map(key=>[key,headers.findIndex(h=>normal(h)===normal(key))]));}
 export function prepareImport({rows,mapping,portfolioId,existing=[],symbols={},cashMode='converted',idFactory=()=>crypto.randomUUID()}){
  if(!Array.isArray(rows)||!rows.length)throw Error('Aucune ligne à importer.');
@@ -14,11 +15,11 @@ export function prepareImport({rows,mapping,portfolioId,existing=[],symbols={},c
   try{
    const t={id:idFactory(),portfolioId};for(const key of IMPORT_FIELDS)t[key]=get(row,key);
    t.type=TYPES[normal(t.type)]||t.type.toLowerCase();t.ticker=t.ticker.toUpperCase();const original=t.ticker;if(original)originalSymbols.add(original);if(original&&Object.hasOwn(symbols,original)){if(!symbols[original]?.trim())throw Error('Symbole Atlas requis pour '+original+'.');t.ticker=symbols[original].trim().toUpperCase()}
-   t.currency=(t.currency||'EUR').toUpperCase();t.targetCurrency=t.targetCurrency.toUpperCase();if(t.type==='exchange'&&cashMode!=='multi')throw Error('Le change exige des soldes par devise.');
-   for(const key of ['quantity','price','fee','amount','targetAmount','ratio','quantityDelta'])if(t[key]){const raw=t[key].replace(',','.');if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)||!Number.isFinite(Number(raw)))throw Error('Nombre invalide pour '+key+'.');t[key]=Number(raw)}
-   const keys=['portfolioId','date','type','ticker','quantity','price','fee','amount','currency','targetCurrency','targetAmount','ratio','quantityDelta','note'];
-   const normalized=(v,key)=>key==='currency'?String(v||'EUR').toUpperCase():['quantity','price','fee','amount','targetAmount','ratio','quantityDelta'].includes(key)?Number(v||0):String(v||'');
-   if([...existing,...pending].some(x=>keys.every(k=>normalized(x[k],k)===normalized(t[k],k))))throw Error('Doublon probable : vérifiez les opérations identiques.');
+   t.currency=(t.currency||'EUR').toUpperCase();t.targetCurrency=t.targetCurrency.toUpperCase();t.settlementCurrency=t.settlementCurrency.toUpperCase();t.sourceIsin=t.sourceIsin.toUpperCase();if(t.sourceIsin&&(!t.ticker||!validIsin(t.sourceIsin)))throw Error('ISIN courtier invalide ou symbole manquant.');if(t.brokerRef&&[...existing,...pending].some(x=>x.portfolioId===portfolioId&&x.brokerRef===t.brokerRef))throw Error('Identifiant courtier déjà importé : '+t.brokerRef+'.');if(t.type==='exchange'&&cashMode!=='multi')throw Error('Le change exige des soldes par devise.');
+   for(const key of ['quantity','price','fee','amount','targetAmount','ratio','quantityDelta','settlementAmount','settlementFee'])if(t[key]){const raw=t[key].replace(',','.');if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)||!Number.isFinite(Number(raw)))throw Error('Nombre invalide pour '+key+'.');t[key]=Number(raw)}
+   const keys=['portfolioId','date','type','ticker','quantity','price','fee','amount','currency','targetCurrency','targetAmount','ratio','quantityDelta','note','settlementCurrency','settlementAmount','settlementFee'];
+   const normalized=(v,key)=>key==='currency'?String(v||'EUR').toUpperCase():['quantity','price','fee','amount','targetAmount','ratio','quantityDelta','settlementAmount','settlementFee'].includes(key)?Number(v||0):String(v||'');
+   if([...existing,...pending].some(x=>!(x.brokerRef&&t.brokerRef&&x.brokerRef!==t.brokerRef)&&keys.every(k=>normalized(x[k],k)===normalized(t[k],k))))throw Error('Doublon probable : vérifiez les opérations identiques.');
    pending.push(t);
   }catch(e){throw Error('Ligne '+(i+2)+' : '+e.message)}
  }

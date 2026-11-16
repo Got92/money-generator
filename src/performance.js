@@ -1,3 +1,4 @@
+import {localToday} from './calendar.js';
 import {cashBalances,validateTransactions} from './finance.js';
 import {xirrResult} from './xirr.js';
 export {xirr} from './xirr.js';
@@ -34,7 +35,7 @@ function dailyFactor(previous,value,external){
 }
 // Daily closing values. Net deposits/withdrawals are assumed at end of day;
 // initial/restarted funding includes that day's costs and price variation.
-export function performanceSeries(transactions,portfolioId,prices,rates,endDate=new Date().toISOString().slice(0,10),cashMode='converted'){
+export function performanceSeries(transactions,portfolioId,prices,rates,endDate=localToday(),cashMode='converted'){
  if(!validDate(endDate)||!['converted','multi'].includes(cashMode))throw Error('Date ou mode de trésorerie invalide.');
  const portfolioTx=transactions.filter(t=>t.portfolioId===portfolioId);
  validateTransactions(portfolioTx);

@@ -26,6 +26,12 @@ class ProviderTest(unittest.TestCase):
             self.assertIsNone(result['price']);self.assertIsNone(result['assetClass']);self.assertTrue(result['warnings'])
             ticker.return_value.get_info.return_value={'symbol':'OTHER','regularMarketPrice':10}
             with self.assertRaises(market.MarketError):market.company('AI.PA')
+    def test_non_iso_quote_currency_is_not_treated_as_fx_currency(self):
+        with patch.object(market.yf,'Ticker') as ticker:
+            ticker.return_value.get_info.return_value={'symbol':'ABC.L','currency':'GBp','regularMarketPrice':123.45,'regularMarketTime':1762963200,'exchangeTimezoneName':'Europe/London'}
+            result=market.company('ABC.L')
+        self.assertIsNone(result['currency']);self.assertTrue(result['warnings'])
+
     def test_invalid_input_and_provider_error(self):
         with self.assertRaises(market.MarketError):market.company('IBM&bad')
         with patch.object(market.yf,'Search',side_effect=Exception('internal detail')):

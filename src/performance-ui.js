@@ -1,3 +1,4 @@
+import {localToday} from './calendar.js';
 import {loadHistory,loadFx,sessionRates,cacheSummary} from './session-market.js';
 import {intradayPortfolio,intradayBenchmark} from './intraday.js';
 import {positions,cashBalances} from './finance.js';
@@ -21,11 +22,11 @@ export function wirePerformance({data,selected,onRatesLoaded=()=>{}}){
   const symbols=[...new Set([...tickers,...(benchmark==='none'?[]:[benchmark])])];
   const results=await Promise.allSettled(symbols.map(s=>loadHistory(s)));if(turn!==generation)return;
   const rows=results.flatMap(r=>r.status==='fulfilled'?r.value:[]);
-  const currencies=new Set([...rows.map(r=>r.currency),...tx.flatMap(t=>[t.currency,t.targetCurrency])].filter(c=>c&&c!=='EUR'));
+  const currencies=new Set([...rows.map(r=>r.currency),...tx.flatMap(t=>[t.currency,t.targetCurrency,t.settlementCurrency])].filter(c=>c&&c!=='EUR'));
   const before=JSON.stringify(sessionRates());await Promise.allSettled([...currencies].map(c=>loadFx(c)));if(turn!==generation)return;
   status.textContent=cacheSummary(symbols,[...currencies]);
   if(JSON.stringify(sessionRates())!==before){onRatesLoaded();return}
-  const result=performanceSeries(tx,selected,rows,sessionRates(),new Date().toISOString().slice(0,10),data.portfolios.find(p=>p.id===selected)?.cashMode||'converted');
+  const result=performanceSeries(tx,selected,rows,sessionRates(),localToday(),data.portfolios.find(p=>p.id===selected)?.cashMode||'converted');
   const view=periodPerformance(result.points,period),dates=view.points;
   const comparison=benchmark==='none'?null:compareBenchmark(dates,rows,sessionRates(),benchmark);
   // The standalone TWR keeps its original window; the plotted comparison has
@@ -40,7 +41,7 @@ export function wirePerformance({data,selected,onRatesLoaded=()=>{}}){
  async function drawIntraday(turn){
   panel.className='chart-empty';panel.textContent='Chargement des cours intrajournaliers…';status.textContent='';
   const cashMode=data.portfolios.find(p=>p.id===selected)?.cashMode||'converted';
-  const today=new Date().toISOString().slice(0,10),current=tx.filter(t=>t.date<=today);
+  const today=localToday(),current=tx.filter(t=>t.date<=today);
   const symbols=positions(current,selected,{},false,sessionRates()).map(p=>p.ticker),series={};
   const get=async symbol=>{if(series[symbol])return;const response=await fetch('/api/market/intraday?symbol='+encodeURIComponent(symbol));const result=await response.json();if(!response.ok)throw Error(result.error);series[symbol]=result.data};
   await Promise.allSettled(symbols.map(get));if(turn!==generation)return;
@@ -83,7 +84,7 @@ export function wirePerformance({data,selected,onRatesLoaded=()=>{}}){
    const symbols=[...new Set([...tickers,...(benchmark==='none'?[]:[benchmark])])];
    if(!symbols.length)throw Error('Aucun titre à actualiser.');
    const results=await Promise.allSettled(symbols.map(s=>loadHistory(s,true)));
-   const currencies=[...new Set([...tx.flatMap(t=>[t.currency,t.targetCurrency]),...results.flatMap(r=>r.status==='fulfilled'?r.value.map(q=>q.currency):[])].filter(c=>c&&c!=='EUR'))];
+   const currencies=[...new Set([...tx.flatMap(t=>[t.currency,t.targetCurrency,t.settlementCurrency]),...results.flatMap(r=>r.status==='fulfilled'?r.value.map(q=>q.currency):[])].filter(c=>c&&c!=='EUR'))];
    const previousRates=JSON.stringify(sessionRates());
    await Promise.allSettled(currencies.map(c=>loadFx(c,true)));
    await draw();

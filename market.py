@@ -63,7 +63,7 @@ def company(symbol):
         price = None
         warnings.append('Cours ou date de cotation indisponible.')
     currency = info.get('currency')
-    if not isinstance(currency, str) or not currency:
+    if not isinstance(currency, str) or not re.fullmatch(r'[A-Z]{3}',currency):
         currency = None
         warnings.append('Devise de cotation indisponible ; position non valorisée.')
     exchange=info.get('exchange'); exchange=exchange.strip() if isinstance(exchange,str) and exchange.strip() else None
