@@ -3,7 +3,6 @@
 Dates on Yahoo statement columns are period ends, not publication dates.
 """
 from abc import ABC, abstractmethod
-import datetime as dt
 import math
 import re
 import yfinance as yf
@@ -41,7 +40,7 @@ class YahooProvider(FundamentalProvider):
                       'cashflow': ticker.cashflow if period == 'annual' else ticker.quarterly_cashflow}
             return normalize(frames, currency)
         except Exception as exc:
-            raise ProviderError('Données fondamentales Yahoo indisponibles : ' + str(exc)) from exc
+            raise ProviderError('Données fondamentales Yahoo indisponibles.') from exc
 
 def normalize(frames, currency):
     observations = []
@@ -62,6 +61,6 @@ def normalize(frames, currency):
                     observations.append({'statement':statement, 'periodEnd':end, 'fiscalYear':None, 'fiscalQuarter':None,
                         'publishedAt':None, 'availableAt':None, 'metric':metric, 'value':value,
                         'currency':None if unit == 'shares' else currency, 'unit':unit,
-                        'status':'reported', 'provenance':{'row':label, 'currency':'Yahoo financialCurrency metadata (current, historical currency unverified)' if unit != 'shares' and currency else None}, 'raw':{'row':label,'value':value}})
+                        'status':'reported', 'provenance':{'row':label, 'currency':{'source':'yfinance.info.financialCurrency', 'quality':'current_metadata_historical_unverified'} if unit != 'shares' and currency else None}, 'raw':{'row':label,'value':value}})
                     break
     return observations

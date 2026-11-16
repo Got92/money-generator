@@ -6,7 +6,7 @@ import json
 import math
 import re
 import threading
-from fundamental_provider import YahooProvider, ProviderError
+from fundamental_provider import YahooProvider, ProviderError, FIELDS
 
 _guard = threading.Lock()
 _locks = {}
@@ -37,15 +37,20 @@ def _validate(rows):
     try:
         seen=set()
         for row in rows:
-            _date(row['periodEnd'])
+            end=_date(row['periodEnd'])
+            today=dt.datetime.now(dt.timezone.utc).date().isoformat()
+            if end>today: raise ValueError()
             for key in ('publishedAt','availableAt'):
-                if row.get(key) is not None: _date(row[key])
+                if row.get(key) is not None:
+                    date=_date(row[key])
+                    if date<end or date>today: raise ValueError()
+            if row.get('publishedAt') and row.get('availableAt') and row['availableAt']<row['publishedAt']: raise ValueError()
             if row['statement'] not in ('income','balance','cashflow') or not re.fullmatch(r'[a-z_]+',row['metric']): raise ValueError()
             if isinstance(row['value'],bool) or not isinstance(row['value'],(int,float)) or not math.isfinite(row['value']): raise ValueError()
             if row['unit'] not in ('currency','currency/share','shares'): raise ValueError()
             if row.get('currency') is not None and not re.fullmatch(r'[A-Z]{3}',row['currency']): raise ValueError()
             if row.get('fiscalYear') is not None and (not isinstance(row['fiscalYear'],int) or isinstance(row['fiscalYear'],bool)): raise ValueError()
-            if row.get('fiscalQuarter') is not None and row['fiscalQuarter'] not in (1,2,3,4): raise ValueError()
+            if row.get('fiscalQuarter') is not None and (type(row['fiscalQuarter']) is not int or row['fiscalQuarter'] not in (1,2,3,4)): raise ValueError()
             if row['status'] not in ('reported','derived'): raise ValueError()
             if not isinstance(row['raw'],dict) or not isinstance(row['provenance'],dict): raise ValueError()
             key=(row['statement'],row['periodEnd'],row['metric'])
@@ -71,10 +76,14 @@ class FundamentalStore:
                 stamp=dt.datetime.now(dt.timezone.utc).isoformat()
                 try:
                     rows=self.provider.fetch(symbol,period)
-                    _validate(rows)
-                    error=None
-                except ProviderError as exc:
-                    rows=[]; error=str(exc)
+                except Exception:
+                    rows=[]; error='Fournisseur de données fondamentales indisponible ; historique conservé.'
+                else:
+                    try:
+                        _validate(rows)
+                        error=None
+                    except ProviderError:
+                        rows=[]; error='Réponse fondamentale invalide ; historique conservé.'
                 with closing(self.connect()) as db, db:
                     db.execute('INSERT OR IGNORE INTO fundamental_instruments(symbol) VALUES(?)',(symbol,))
                     instrument=db.execute('SELECT id FROM fundamental_instruments WHERE symbol=?',(symbol,)).fetchone()[0]
@@ -107,7 +116,12 @@ class FundamentalStore:
                 return self._response(symbol,period,list(latest.values()),meta,as_of)
     def _response(self,symbol,period,rows,meta,as_of):
         ends=sorted({r['periodEnd'] for r in rows})
+        expected={metric for fields in FIELDS.values() for metric in fields}
+        by_period=[]
+        for end in ends:
+            present={row['metric'] for row in rows if row['periodEnd']==end}
+            by_period.append({'periodEnd':end,'availableMetrics':sorted(present & expected),'missingMetrics':sorted(expected-present)})
         return {'symbol':symbol,'period':period,'asOf':as_of,'data':rows,
-                'coverage':{'periodEnds':ends,'firstPeriodEnd':ends[0] if ends else None,'lastPeriodEnd':ends[-1] if ends else None,'years':sorted({d[:4] for d in ends}),'observations':len(rows)},
+                'coverage':{'periodEnds':ends,'firstPeriodEnd':ends[0] if ends else None,'lastPeriodEnd':ends[-1] if ends else None,'years':sorted({d[:4] for d in ends}),'observations':len(rows),'byPeriod':by_period},
                 'fetch':{'attemptedAt':meta[0] if meta else None,'succeededAt':meta[1] if meta else None,'error':meta[2] if meta else None},
                 'limitations':['Les fins de période ne sont pas des dates de publication.', 'Les dates de disponibilité inconnues excluent les données des requêtes historiques.']}

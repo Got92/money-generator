@@ -93,6 +93,26 @@ class StorageTest(unittest.TestCase):
             self.assertEqual(get('/api/market/history?symbol=INVALID&refresh=1')[0],503)
         for path in ('/api/market/history?symbol=bad%26symbol','/api/market/fx?from=USD&to=USD'):
             self.assertEqual(get(path)[0],400)
+    def test_fundamental_migration_then_state_save_preserves_existing_data(self):
+        data={'portfolios':[{'id':'p','name':'P','currency':'EUR'}], 'transactions':[{'id':'t','portfolioId':'p','date':'2024-01-01','type':'deposit','amount':100}], 'watchlist':[], 'marketData':{'IBM':{'metrics':{'pe':2}}}}
+        # First establish the older schema and data, then remove only v2 from this fixture.
+        with server.connect() as db:
+            db.execute('DROP TABLE fundamental_fetches'); db.execute('DROP TABLE fundamental_observations'); db.execute('DROP TABLE fundamental_instruments')
+            db.execute('DELETE FROM schema_migrations WHERE version=2')
+            db.execute("INSERT INTO state VALUES(1,1,?)",(json.dumps(data),))
+            server.write_collections(db,data)
+            db.execute("INSERT INTO prices VALUES('IBM','2024-01-01',100,'USD','fixture','2024-01-02')")
+            db.execute("INSERT INTO fx_observations VALUES('USD','EUR','2024-01-01',0.9,'fixture',NULL,'{}')")
+        status,loaded=self.request(); self.assertEqual(status,200); self.assertEqual(loaded['data'],data)
+        self.assertEqual(self.request('PUT',{'revision':1,'data':data})[0],200)
+        with server.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM portfolios').fetchone()[0],1)
+            self.assertEqual(db.execute('SELECT count(*) FROM transactions').fetchone()[0],1)
+            self.assertEqual(db.execute('SELECT payload FROM fundamentals WHERE ticker="IBM"').fetchone()[0],'{"pe": 2}')
+            self.assertEqual(db.execute('SELECT price FROM prices').fetchone()[0],100)
+            self.assertEqual(db.execute('SELECT rate FROM fx_observations').fetchone()[0],0.9)
+            self.assertEqual(db.execute('SELECT revision FROM state').fetchone()[0],2)
+            self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations WHERE version=2').fetchone()[0],1)
     def test_exchange_requires_multicurrency_account(self):
         data={'portfolios':[{'id':'p','name':'P','currency':'EUR','cashMode':'multi'}], 'transactions':[{'id':'x','portfolioId':'p','date':'2024-01-02','type':'exchange','currency':'EUR','amount':90,'targetCurrency':'USD','targetAmount':100}], 'watchlist':[]}
         self.assertEqual(self.request('PUT',{'revision':0,'data':data})[0],200)

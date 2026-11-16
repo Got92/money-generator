@@ -8,7 +8,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 from http.server import ThreadingHTTPServer
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import pandas as pd
 import fundamental_provider as provider
 import fundamental_store as store
@@ -31,7 +31,7 @@ class Stub:
 
 class FundamentalTest(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(dir='/workspace/work'); self.old=server.DB
+        self.temp=tempfile.TemporaryDirectory(); self.old=server.DB
         server.DB=Path(self.temp.name)/'test.sqlite'; self.stub=Stub(); self.store=store.FundamentalStore(server.connect,self.stub)
     def tearDown(self): server.DB=self.old; self.temp.cleanup()
     def test_migration_atomic_idempotent_and_preserves_state(self):
@@ -56,7 +56,7 @@ class FundamentalTest(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(DISTINCT raw) FROM fundamental_observations').fetchone()[0],2)
         self.stub.rows=provider.ProviderError('Quota atteint')
         result=self.store.get('IBM',refresh=True)
-        self.assertEqual(result['data'][0]['value'],100); self.assertIn('Quota',result['fetch']['error'])
+        self.assertEqual(result['data'][0]['value'],100); self.assertIn('indisponible',result['fetch']['error']); self.assertNotIn('Quota',result['fetch']['error'])
         self.stub.rows=[]
         self.assertEqual(self.store.get('IBM','quarterly')['data'],[])
         self.assertEqual(self.store.get('IBM')['data'][0]['value'],100)
@@ -82,6 +82,33 @@ class FundamentalTest(unittest.TestCase):
         self.assertEqual(set(by),{'revenue','diluted_average_shares','capex'})
         self.assertEqual(by['capex']['value'],-20); self.assertIsNone(by['diluted_average_shares']['currency'])
         self.assertIsNone(by['revenue']['availableAt']); self.assertIsNone(by['revenue']['fiscalYear'])
+    def test_adapter_annual_and_quarterly_mapping_and_currency_provenance(self):
+        annual=pd.DataFrame({pd.Timestamp('2023-12-31'):[100,4]},index=['Total Revenue','Diluted EPS'])
+        quarterly=pd.DataFrame({pd.Timestamp('2024-03-31'):[25]},index=['Total Revenue'])
+        ticker=MagicMock(info={'financialCurrency':'USD'},income_stmt=annual,quarterly_income_stmt=quarterly,
+                         balance_sheet=pd.DataFrame(),quarterly_balance_sheet=pd.DataFrame(),
+                         cashflow=pd.DataFrame(),quarterly_cashflow=pd.DataFrame())
+        with patch.object(provider.yf,'Ticker',return_value=ticker):
+            a=provider.YahooProvider().fetch('IBM','annual'); q=provider.YahooProvider().fetch('IBM','quarterly')
+        self.assertEqual({r['metric'] for r in a},{'revenue','diluted_eps'})
+        self.assertEqual(q[0]['value'],25); self.assertEqual(q[0]['periodEnd'],'2024-03-31')
+        self.assertEqual(q[0]['provenance']['currency']['quality'],'current_metadata_historical_unverified')
+        self.assertEqual(q[0]['raw']['row'],'Total Revenue'); self.assertIsNone(q[0]['availableAt'])
+        with patch.object(provider.yf,'Ticker',side_effect=RuntimeError('secret')):
+            with self.assertRaises(provider.ProviderError) as err: provider.YahooProvider().fetch('IBM','annual')
+            self.assertNotIn('secret',str(err.exception))
+    def test_missing_metric_coverage_and_invalid_chronology(self):
+        result=self.store.get('IBM'); coverage=result['coverage']['byPeriod'][0]
+        self.assertIn('revenue',coverage['availableMetrics']); self.assertIn('gross_profit',coverage['missingMetrics'])
+        for changes in ({'periodEnd':'2099-01-01'}, {'periodEnd':'2024-02-31'},
+                        {'publishedAt':'2023-12-30'}, {'availableAt':'2024-01-31'},
+                        {'availableAt':'2099-01-01'}, {'fiscalQuarter':True}, {'fiscalQuarter':1.0}):
+            self.stub.rows=[{**observation(),**changes}]
+            result=self.store.get('IBM',refresh=True)
+            self.assertIn('invalide',result['fetch']['error']); self.assertEqual(result['data'][0]['value'],100)
+        self.stub.rows=RuntimeError('secret-key')
+        result=self.store.get('IBM',refresh=True)
+        self.assertNotIn('secret-key',result['fetch']['error']); self.assertEqual(result['data'][0]['value'],100)
     def test_http(self):
         http=ThreadingHTTPServer(('127.0.0.1',0),server.Handler); thread=threading.Thread(target=http.serve_forever,daemon=True); thread.start()
         try:
