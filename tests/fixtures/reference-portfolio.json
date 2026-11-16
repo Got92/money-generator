@@ -1,0 +1,295 @@
+{
+  "data": {
+    "portfolios": [
+      {
+        "id": "ref",
+        "name": "Référence synthétique",
+        "currency": "EUR",
+        "cashMode": "multi"
+      }
+    ],
+    "watchlist": [],
+    "transactions": [
+      {
+        "id": "01",
+        "portfolioId": "ref",
+        "date": "2024-01-01",
+        "type": "deposit",
+        "currency": "EUR",
+        "amount": 10000
+      },
+      {
+        "id": "02",
+        "portfolioId": "ref",
+        "date": "2024-01-01",
+        "type": "deposit",
+        "currency": "USD",
+        "amount": 1000
+      },
+      {
+        "id": "03",
+        "portfolioId": "ref",
+        "date": "2024-01-02",
+        "type": "buy",
+        "currency": "EUR",
+        "ticker": "AAA",
+        "quantity": 10,
+        "price": 100,
+        "fee": 2
+      },
+      {
+        "id": "04",
+        "portfolioId": "ref",
+        "date": "2024-01-03",
+        "type": "buy",
+        "currency": "USD",
+        "ticker": "BBB",
+        "quantity": 4,
+        "price": 50,
+        "fee": 1
+      },
+      {
+        "id": "05",
+        "portfolioId": "ref",
+        "date": "2024-01-04",
+        "type": "buy",
+        "currency": "EUR",
+        "ticker": "AAA",
+        "quantity": 10,
+        "price": 120,
+        "fee": 2
+      },
+      {
+        "id": "06",
+        "portfolioId": "ref",
+        "date": "2024-01-05",
+        "type": "sell",
+        "currency": "USD",
+        "ticker": "BBB",
+        "quantity": 4,
+        "price": 60,
+        "fee": 1
+      },
+      {
+        "id": "07",
+        "portfolioId": "ref",
+        "date": "2024-01-06",
+        "type": "sell",
+        "currency": "EUR",
+        "ticker": "AAA",
+        "quantity": 5,
+        "price": 130,
+        "fee": 1
+      },
+      {
+        "id": "08",
+        "portfolioId": "ref",
+        "date": "2024-01-07",
+        "type": "dividend",
+        "currency": "EUR",
+        "ticker": "AAA",
+        "amount": 20
+      },
+      {
+        "id": "09",
+        "portfolioId": "ref",
+        "date": "2024-01-08",
+        "type": "split",
+        "currency": "EUR",
+        "ticker": "AAA",
+        "ratio": 2,
+        "note": "2:1"
+      },
+      {
+        "id": "10",
+        "portfolioId": "ref",
+        "date": "2024-01-08",
+        "type": "dividend",
+        "currency": "USD",
+        "ticker": "BBB",
+        "amount": 10
+      },
+      {
+        "id": "11",
+        "portfolioId": "ref",
+        "date": "2024-01-09",
+        "type": "buy",
+        "currency": "EUR",
+        "ticker": "CCC",
+        "quantity": 2,
+        "price": 80,
+        "fee": 0
+      },
+      {
+        "id": "12",
+        "portfolioId": "ref",
+        "date": "2024-01-10",
+        "type": "buy",
+        "currency": "EUR",
+        "ticker": "CCC",
+        "quantity": 1,
+        "price": 100,
+        "fee": 0
+      },
+      {
+        "id": "13",
+        "portfolioId": "ref",
+        "date": "2024-01-11",
+        "type": "sell",
+        "currency": "EUR",
+        "ticker": "CCC",
+        "quantity": 1,
+        "price": 110,
+        "fee": 0
+      },
+      {
+        "id": "14",
+        "portfolioId": "ref",
+        "date": "2024-01-12",
+        "type": "deposit",
+        "currency": "EUR",
+        "amount": 200
+      },
+      {
+        "id": "15",
+        "portfolioId": "ref",
+        "date": "2024-01-13",
+        "type": "withdrawal",
+        "currency": "EUR",
+        "amount": 200
+      },
+      {
+        "id": "16",
+        "portfolioId": "ref",
+        "date": "2024-01-14",
+        "type": "deposit",
+        "currency": "EUR",
+        "amount": 50
+      },
+      {
+        "id": "17",
+        "portfolioId": "ref",
+        "date": "2024-01-15",
+        "type": "withdrawal",
+        "currency": "EUR",
+        "amount": 50
+      },
+      {
+        "id": "18",
+        "portfolioId": "ref",
+        "date": "2024-01-16",
+        "type": "dividend",
+        "currency": "EUR",
+        "ticker": "CCC",
+        "amount": 10
+      },
+      {
+        "id": "19",
+        "portfolioId": "ref",
+        "date": "2024-01-17",
+        "type": "deposit",
+        "currency": "USD",
+        "amount": 25
+      },
+      {
+        "id": "20",
+        "portfolioId": "ref",
+        "date": "2024-01-18",
+        "type": "withdrawal",
+        "currency": "USD",
+        "amount": 25
+      }
+    ]
+  },
+  "quotes": {
+    "AAA": {
+      "price": 60,
+      "currency": "EUR",
+      "priceDate": "2024-01-19",
+      "isin": "ZZ0000000001",
+      "exchange": "TEST"
+    },
+    "CCC": {
+      "price": 90,
+      "currency": "EUR",
+      "priceDate": "2024-01-19",
+      "isin": "ZZ0000000003",
+      "exchange": "TEST"
+    },
+    "BBB": {
+      "isin": "ZZ0000000002",
+      "exchange": "TEST"
+    }
+  },
+  "rates": [
+    {
+      "from": "USD",
+      "to": "EUR",
+      "date": "2024-01-01",
+      "rate": 0.9
+    }
+  ],
+  "statement": {
+    "from": "2024-01-01",
+    "asOf": "2024-01-19",
+    "positionsComplete": true,
+    "cashComplete": true,
+    "positions": [
+      {
+        "ticker": "AAA",
+        "quantity": 30,
+        "averageEUR": 55.1,
+        "valueEUR": 1800,
+        "realizedEUR": 98,
+        "isin": "ZZ0000000001",
+        "exchange": "TEST"
+      },
+      {
+        "ticker": "BBB",
+        "quantity": 0,
+        "realizedEUR": 34.2,
+        "isin": "ZZ0000000002",
+        "exchange": "TEST"
+      },
+      {
+        "ticker": "CCC",
+        "quantity": 2,
+        "averageEUR": 86.6666666667,
+        "valueEUR": 180,
+        "realizedEUR": 23.3333333333,
+        "isin": "ZZ0000000003",
+        "exchange": "TEST"
+      }
+    ],
+    "cash": [
+      {
+        "currency": "EUR",
+        "amount": 8325
+      },
+      {
+        "currency": "USD",
+        "amount": 1048
+      }
+    ],
+    "fees": [
+      {
+        "currency": "EUR",
+        "amount": 5
+      },
+      {
+        "currency": "USD",
+        "amount": 2
+      }
+    ],
+    "dividends": [
+      {
+        "currency": "EUR",
+        "amount": 30
+      },
+      {
+        "currency": "USD",
+        "amount": 10
+      }
+    ]
+  }
+}

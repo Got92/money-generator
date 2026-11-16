@@ -27,6 +27,7 @@ async function load(cache,key,url,refresh){
 
 export async function loadHistory(symbol,refresh=false){symbol=symbol.toUpperCase();return load(histories,symbol,'/api/market/history?symbol='+encodeURIComponent(symbol),refresh)}
 export async function loadFx(currency,refresh=false){if(currency==='EUR')return [];return load(fx,currency,'/api/market/fx?from='+encodeURIComponent(currency)+'&to=EUR',refresh)}
+export function invalidateFx(currency){fx.delete(currency)}
 export function sessionRates(){return [...fx.values()].flatMap(entry=>entry.rows)}
 
 export function cacheSummary(symbols=[],currencies=[]){

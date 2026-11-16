@@ -119,3 +119,103 @@ class StorageTest(unittest.TestCase):
         data['portfolios'][0]['cashMode']='converted'
         self.assertEqual(self.request('PUT',{'revision':1,'data':data})[0],400)
 if __name__=='__main__': unittest.main()
+
+class BackupTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory(); server.DB=Path(self.tmp.name)/'atlas.sqlite3'
+        self.http=ThreadingHTTPServer(('127.0.0.1',0),server.Handler)
+        self.thread=threading.Thread(target=self.http.serve_forever,daemon=True);self.thread.start()
+        self.base=f'http://127.0.0.1:{self.http.server_port}'
+    def tearDown(self): self.http.shutdown(); self.http.server_close(); self.thread.join(); self.tmp.cleanup()
+    def request(self,path,method='GET',body=None,headers={}):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(self.base+path,data=body,headers=headers,method=method)) as r:return r.status,r.read()
+        except urllib.error.HTTPError as e:return e.code,e.read()
+    def test_backup_restore_all_tables_and_reject_invalid_or_stale(self):
+        data={'portfolios':[{'id':'p','name':'P','currency':'EUR'}],'transactions':[{'id':'b','portfolioId':'p','date':'2024-01-01','type':'buy','ticker':'A','quantity':10,'price':100},{'id':'s','portfolioId':'p','date':'2024-01-02','type':'split','ticker':'A','ratio':2,'note':'2:1'}],'watchlist':['A']}
+        status,_=self.request('/api/state','PUT',json.dumps({'revision':0,'data':data}).encode());self.assertEqual(status,200)
+        with server.connect() as db:
+            db.execute("INSERT INTO prices VALUES('A','2024-01-01',100,'EUR','test','now')")
+            db.execute("INSERT INTO fx_observations VALUES('USD','EUR','2024-01-01',0.9,'test','now','{}')")
+            db.execute("INSERT INTO fundamental_instruments VALUES(1,'A')")
+            db.execute("INSERT INTO valuation_scenarios VALUES('A','Base','{}','now')")
+            db.execute("INSERT INTO allocation_target_configs VALUES('p','invested',1)")
+            db.execute("INSERT INTO allocation_targets VALUES('p','position','A',0.5,0.4,0.6)")
+        status,backup=self.request('/api/backup'); self.assertEqual(status,200)
+        with server.connect() as db:
+            for table in ('prices','fx_observations','fundamental_instruments','valuation_scenarios','allocation_targets'): db.execute('DELETE FROM '+table)
+        status,_=self.request('/api/backup/restore','PUT',backup,{'X-Atlas-Revision':'0'}); self.assertEqual(status,409)
+        status,_=self.request('/api/backup/restore','PUT',b'not sqlite',{'X-Atlas-Revision':'1'}); self.assertEqual(status,400)
+        status,result=self.request('/api/backup/restore','PUT',backup,{'X-Atlas-Revision':'1'}); self.assertEqual(status,200); self.assertEqual(json.loads(result)['revision'],2)
+        with server.connect() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM prices').fetchone()[0],1)
+            self.assertEqual(len(server.read_data(db,db.execute('SELECT payload FROM state').fetchone()[0])['transactions']),2)
+        snapshot_file=Path(self.tmp.name)/'export.sqlite3';snapshot_file.write_bytes(backup)
+        with sqlite3.connect(snapshot_file) as expected, sqlite3.connect(server.DB) as actual:
+            tables=[r[0] for r in expected.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+            for table in tables:
+                if table=='state':
+                    self.assertEqual(expected.execute('SELECT id,payload FROM state').fetchall(),actual.execute('SELECT id,payload FROM state').fetchall())
+                else:
+                    self.assertEqual(expected.execute('SELECT * FROM "'+table+'"').fetchall(),actual.execute('SELECT * FROM "'+table+'"').fetchall(),table)
+        self.assertEqual(len(list((server.DB.parent/'backups').glob('avant-restauration-*.sqlite3'))),1)
+    def test_migration_creates_recoverable_prior_snapshot(self):
+        with sqlite3.connect(server.DB) as db:
+            db.execute('CREATE TABLE legacy(value TEXT)');db.execute("INSERT INTO legacy VALUES('keep')")
+        with server.connect(): pass
+        files=list((server.DB.parent/'backups').glob('avant-migration-*.sqlite3'));self.assertEqual(len(files),1)
+        with sqlite3.connect(files[0]) as db:self.assertEqual(db.execute('SELECT value FROM legacy').fetchone()[0],'keep')
+
+    def test_failed_pre_migration_backup_prevents_schema_changes(self):
+        with sqlite3.connect(server.DB) as db: db.execute('CREATE TABLE legacy(value TEXT)')
+        with patch.object(server,'snapshot',side_effect=OSError('disk full')):
+            with self.assertRaises(OSError): server.connect()
+        with sqlite3.connect(server.DB) as db:
+            self.assertEqual([r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")],['legacy'])
+
+
+class RestoreConcurrencyTest(unittest.TestCase):
+    def test_restore_waits_for_inflight_requests_and_blocks_new_ones(self):
+        request_started=threading.Event(); release_request=threading.Event(); restoring=threading.Event(); release_restore=threading.Event(); later_entered=threading.Event()
+        def first():
+            with server.request_access(): request_started.set(); release_request.wait(2)
+        def restore():
+            with server.request_access(True): restoring.set(); release_restore.wait(2)
+        def later():
+            with server.request_access(): later_entered.set()
+        first_thread=threading.Thread(target=first); restore_thread=threading.Thread(target=restore); later_thread=threading.Thread(target=later)
+        first_thread.start(); self.assertTrue(request_started.wait(1)); restore_thread.start()
+        try:
+            with server._request_condition:
+                self.assertTrue(server._request_condition.wait_for(lambda: server._restore_pending, timeout=1))
+            later_thread.start(); self.assertFalse(restoring.wait(.05)); self.assertFalse(later_entered.is_set())
+            release_request.set(); self.assertTrue(restoring.wait(1)); self.assertFalse(later_entered.wait(.05)); release_restore.set(); self.assertTrue(later_entered.wait(1))
+        finally:
+            release_request.set(); release_restore.set()
+            for thread in (first_thread,restore_thread,later_thread):
+                if thread.ident is not None: thread.join(2)
+
+class SyncTest(StorageTest):
+    def test_sync_retains_failures_and_saves_success_with_fx(self):
+        data={'portfolios':[{'id':'p','name':'P','currency':'EUR'}], 'transactions':[{'id':'b','portfolioId':'p','type':'buy','date':'2024-01-01','ticker':'AAA','quantity':1,'price':10,'currency':'USD'}], 'watchlist':['FAIL'], 'marketData':{'FAIL':{'price':3,'currency':'EUR','priceDate':'2024-01-01','name':'Conservé'}}}
+        self.assertEqual(self.request('PUT',{'revision':0,'data':data})[0],200)
+        def company(symbol):
+            if symbol=='FAIL': raise server.market.MarketError('indisponible')
+            return {'symbol':symbol,'price':15,'priceDate':'2024-02-01','currency':'USD','source':'fixture'}
+        with patch.object(server.market,'company',side_effect=company), patch.object(server.history_cache,'fx',return_value={'cache':{'status':'fresh'}}) as fx:
+            url=self.url.replace('/api/state','/api/market/sync')
+            request=urllib.request.Request(url,data=json.dumps({'revision':1}).encode(),method='PUT',headers={'Content-Type':'application/json'})
+            with urllib.request.urlopen(request) as response: result=json.load(response)
+            self.assertEqual(result['updated'],['AAA']);self.assertIn('FAIL',result['failures']);fx.assert_called_once_with('USD','EUR',True)
+        status,state=self.request(); self.assertEqual(state['revision'],2); self.assertEqual(state['data']['marketData']['FAIL']['name'],'Conservé'); self.assertEqual(state['data']['marketData']['AAA']['price'],15)
+    def test_sync_does_not_overwrite_changes_during_fetch(self):
+        data={'portfolios':[{'id':'p','name':'P','currency':'EUR'}], 'transactions':[], 'watchlist':['AAA']}
+        self.assertEqual(self.request('PUT',{'revision':0,'data':data})[0],200)
+        def company(symbol):
+            changed={**data,'watchlist':['BBB']};self.assertEqual(self.request('PUT',{'revision':1,'data':changed})[0],200)
+            return {'symbol':symbol,'price':15,'priceDate':'2024-02-01','currency':'EUR'}
+        with patch.object(server.market,'company',side_effect=company):
+            req=urllib.request.Request(self.url.replace('/api/state','/api/market/sync'),data=b'{"revision":1}',method='PUT')
+            with self.assertRaises(urllib.error.HTTPError) as err: urllib.request.urlopen(req)
+            self.assertEqual(err.exception.code,409)
+        self.assertEqual(self.request()[1]['data']['watchlist'],['BBB'])

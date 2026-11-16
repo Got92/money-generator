@@ -16,6 +16,7 @@ export function wirePerformance({data,selected,onRatesLoaded=()=>{}}){
   if(selected==='demo'){panel.innerHTML='Les cours fictifs du portefeuille démo n’ont pas d’historique.';return}
   if(!tx.length){panel.innerHTML='Ajoutez des transactions pour afficher la performance.';return}
   if(period==='1D'){await drawIntraday(turn);return}
+  if(tx.some(t=>['split','adjustment'].includes(t.type))){panel.className='chart-empty';panel.textContent='Performance historique indisponible : les cours fournisseurs peuvent être ajustés pour les splits et les corrections de quantité ne représentent pas nécessairement un rendement. Vérifiez les cours et le relevé du courtier.';status.textContent='';return}
   panel.className='chart-empty';panel.textContent='Chargement de la période…';
   const symbols=[...new Set([...tickers,...(benchmark==='none'?[]:[benchmark])])];
   const results=await Promise.allSettled(symbols.map(s=>loadHistory(s)));if(turn!==generation)return;

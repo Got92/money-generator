@@ -65,6 +65,8 @@ export function performanceSeries(transactions,portfolioId,prices,rates,endDate=
     }
    }
    if(t.type==='buy'||t.type==='sell')holdings.set(t.ticker,(holdings.get(t.ticker)||0)+(t.type==='buy'?1:-1)*Number(t.quantity));
+   if(t.type==='split')holdings.set(t.ticker,(holdings.get(t.ticker)||0)*Number(t.ratio));
+   if(t.type==='adjustment')holdings.set(t.ticker,(holdings.get(t.ticker)||0)+Number(t.quantityDelta));
    if(t.type==='deposit'||t.type==='withdrawal'){
     const r=rate(currency),amount=r===null?null:Number(t.amount)*r*(t.type==='deposit'?1:-1);
     external=external===null||amount===null?null:external+amount;

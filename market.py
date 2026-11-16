@@ -66,6 +66,8 @@ def company(symbol):
     if not isinstance(currency, str) or not currency:
         currency = None
         warnings.append('Devise de cotation indisponible ; position non valorisée.')
+    exchange=info.get('exchange'); exchange=exchange.strip() if isinstance(exchange,str) and exchange.strip() else None
+    isin=info.get('isin'); isin=isin.strip().upper() if isinstance(isin,str) and re.fullmatch(r'[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]',isin.strip()) else None
     fields = {'marketCap':'marketCap', 'revenue':'totalRevenue', 'ebitda':'ebitda',
               'eps':'trailingEps', 'pe':'trailingPE', 'operatingMargin':'operatingMargins',
               'profitMargin':'profitMargins', 'roe':'returnOnEquity', 'shares':'sharesOutstanding',
@@ -81,7 +83,7 @@ def company(symbol):
             'description':info.get('longBusinessSummary') or None, 'sector':info.get('sector') or None,
             'industry':info.get('industry') or None, 'country':info.get('country') or None,
             'assetClass':info.get('quoteType') if isinstance(info.get('quoteType'), str) and info.get('quoteType').strip() else None,
-            'currency':currency, 'financialCurrency':info.get('financialCurrency') or None,
+            'currency':currency, 'exchange':exchange, 'isin':isin, 'financialCurrency':info.get('financialCurrency') or None,
             'price':price, 'priceDate':day, 'priceTimestamp':date_utc(info.get('regularMarketTime')),
             'fiscalYearEnd':date_utc(info.get('lastFiscalYearEnd')),
             'latestQuarter':date_utc(info.get('mostRecentQuarter')), 'metrics':metrics,
