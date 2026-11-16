@@ -1,36 +1,113 @@
-const DAY=86400000;
+import {cashBalances,validateTransactions} from './finance.js';
+import {xirrResult} from './xirr.js';
+export {xirr} from './xirr.js';
+export {selectPeriod,periodPerformance} from './performance-periods.js';
+const DAY=86400000,EPS=1e-9;
 const time=d=>Date.parse(d+'T00:00:00Z');
-function indexBy(rows,key){const map=new Map();for(const row of rows){const k=key(row);if(!map.has(k))map.set(k,[]);map.get(k).push(row)}for(const values of map.values())values.sort((a,b)=>a.date.localeCompare(b.date));return map}
-function asOf(rows,date,maxAge=7){if(!rows)return null;let lo=0,hi=rows.length;while(lo<hi){const m=(lo+hi)>>1;if(rows[m].date<=date)lo=m+1;else hi=m}const r=rows[lo-1];return r&&time(date)-time(r.date)<=maxAge*DAY?r:null}
-export function xirr(flows){
- if(flows.length<2||!flows.some(f=>f.amount<0)||!flows.some(f=>f.amount>0))return null;
- const start=time(flows[0].date);if(flows.every(f=>time(f.date)===start))return null;
- const npv=x=>flows.reduce((s,f)=>s+f.amount*Math.exp(-x*(time(f.date)-start)/DAY/365),0);
- // Search log(1+r), and refuse ambiguous multiple roots.
- const roots=[];let a=-13.8,fa=npv(a);for(let b=a+.1;b<=14;b+=.1){const fb=npv(b);if(Number.isFinite(fa)&&Number.isFinite(fb)&&fa*fb<0){let l=a,h=b,fl=fa;for(let i=0;i<80;i++){const m=(l+h)/2,fm=npv(m);if(fl*fm<=0)h=m;else{l=m;fl=fm}}roots.push(Math.exp((l+h)/2)-1)}a=b;fa=fb}return roots.length===1&&Number.isFinite(roots[0])?roots[0]:null;
-}
-// Daily closing values; deposits/withdrawals are assumed to occur at the end of the day.
-export function performanceSeries(transactions,portfolioId,prices,rates,endDate=new Date().toISOString().slice(0,10),cashMode='converted'){
- const tx=transactions.filter(t=>t.portfolioId===portfolioId&&t.date<=endDate).slice().sort((a,b)=>a.date.localeCompare(b.date));
- if(!tx.length)return {points:[],xirr:null};
- const indexed=indexBy(prices,r=>r.ticker), fx=indexBy(rates,r=>r.from+'/'+r.to), holdings=new Map(), flows=[];let cash=0, next=0, previous=null, index=100, broken=false;
- const rate=(currency,date)=>currency==='EUR'?1:Number(asOf(fx.get(currency+'/EUR'),date)?.rate)||null;
- const points=[], balances={};
- for(let ms=time(tx[0].date);ms<=time(endDate);ms+=DAY){const date=new Date(ms).toISOString().slice(0,10);let external=0,missing=false;
-  while(next<tx.length&&tx[next].date===date){const t=tx[next++],r=rate(t.currency||'EUR',date);if(r===null){missing=true;broken=true;continue}const currency=t.currency||'EUR';const amount=Number(t.amount||0),q=Number(t.quantity||0),price=Number(t.price||0),fee=Number(t.fee||0);
-   if(t.type==='deposit'||t.type==='withdrawal'){const sign=t.type==='deposit'?1:-1;const v=amount*r*sign;if(cashMode==='multi')balances[currency]=(balances[currency]||0)+amount*sign;else cash+=v;external+=v;flows.push({date,amount:-v})}
-   else if(t.type==='dividend'){if(cashMode==='multi')balances[currency]=(balances[currency]||0)+amount;else cash+=amount*r;}
-   else if(t.type==='buy'||t.type==='sell'){const sign=t.type==='buy'?1:-1;holdings.set(t.ticker,(holdings.get(t.ticker)||0)+sign*q);if(cashMode==='multi')balances[currency]=(balances[currency]||0)-sign*q*price-fee;else cash+=(-sign*q*price-fee)*r}
-   else if(t.type==='exchange'&&cashMode==='multi'){balances[currency]=(balances[currency]||0)-amount;balances[t.targetCurrency]=(balances[t.targetCurrency]||0)+Number(t.targetAmount)}
-  }
-  let value=cash;if(cashMode==='multi')for(const [currency,amount] of Object.entries(balances)){if(Math.abs(amount)<1e-9)continue;const r=rate(currency,date);if(r===null){missing=true;break}value+=amount*r}for(const [ticker,q] of holdings){if(Math.abs(q)<1e-9)continue;const quote=asOf(indexed.get(ticker),date),r=quote&&rate(quote.currency,date);if(!quote||r===null){missing=true;break}value+=q*quote.price*r}
-  if(missing||broken){points.push({date,value:null,index:null});previous=null;index=100;continue}
-  if(previous===null){if(external>0){index=100*(value/external)}else if(value>0){index=100}else index=null}
-  else if(previous>0&&index!==null)index*= (value-external)/previous;
-  else index=null;
-  points.push({date,value,index:Number.isFinite(index)?index:null});previous=value;
+function validDate(day){return typeof day==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(day)&&Number.isFinite(time(day))&&new Date(time(day)).toISOString().slice(0,10)===day}
+function indexBy(rows,key,field,allowZero=false){
+ const map=new Map();
+ for(const row of rows){
+  if(!validDate(row.date)||typeof row[field]!=='number'||!Number.isFinite(row[field])||(allowZero?row[field]<0:row[field]<=0))continue;
+  const k=key(row);if(!map.has(k))map.set(k,[]);map.get(k).push(row);
  }
- const last=points.at(-1);return {points,xirr:last?.value!==null&&!broken?xirr([...flows,{date:last.date,amount:last.value}]):null};
+ for(const values of map.values())values.sort((a,b)=>a.date.localeCompare(b.date));
+ return map;
 }
-export function benchmarkSeries(points,prices,rates,symbol){const p=indexBy(prices,r=>r.ticker),fx=indexBy(rates,r=>r.from+'/'+r.to);return points.map(point=>{const q=asOf(p.get(symbol),point.date),r=q&&(q.currency==='EUR'?1:Number(asOf(fx.get(q.currency+'/EUR'),point.date)?.rate)||null);return {date:point.date,value:q&&r!==null?q.price*r:null}})}
-export function selectPeriod(points,period){if(!points.length)return [];const end=time(points.at(-1).date);let start=period==='1D'?end-DAY:period==='1W'?end-7*DAY:period==='1M'?end-30*DAY:period==='YTD'?time(points.at(-1).date.slice(0,4)+'-01-01'):-Infinity;return points.filter(p=>time(p.date)>=start)}
+function asOf(rows,date){
+ if(!rows)return null;
+ let lo=0,hi=rows.length;while(lo<hi){const m=(lo+hi)>>1;if(rows[m].date<=date)lo=m+1;else hi=m}
+ const row=rows[lo-1];return row&&time(date)-time(row.date)<=7*DAY?row:null;
+}
+function dailyFactor(previous,value,external){
+ if(value===null)return {factor:null,reason:'Cours ou taux de change manquant pour valoriser cette date.'};
+ if(external===null)return {factor:null,reason:'Conversion en EUR d’un apport ou retrait indisponible.'};
+ if(previous===null)return {factor:null,reason:'Valorisation de la veille indisponible.'};
+ if(previous<-EPS||value<-EPS)return {factor:null,reason:'Valeur nette négative : rendement non calculable par cette méthode.'};
+ if(previous>EPS){
+  const numerator=value-external;
+  return numerator>=-EPS?{factor:Math.max(0,numerator)/previous,reason:null}:{factor:null,reason:'Capital avant flux externe négatif.'};
+ }
+ if(external>EPS)return {factor:Math.max(0,value)/external,reason:null};
+ if(Math.abs(value)<=EPS&&Math.abs(external)<=EPS)return {factor:1,reason:null};
+ return {factor:null,reason:'Absence de capital initial positif ou de financement identifiable.'};
+}
+// Daily closing values. Net deposits/withdrawals are assumed at end of day;
+// initial/restarted funding includes that day's costs and price variation.
+export function performanceSeries(transactions,portfolioId,prices,rates,endDate=new Date().toISOString().slice(0,10),cashMode='converted'){
+ if(!validDate(endDate)||!['converted','multi'].includes(cashMode))throw Error('Date ou mode de trésorerie invalide.');
+ const portfolioTx=transactions.filter(t=>t.portfolioId===portfolioId);
+ validateTransactions(portfolioTx);
+ if(cashMode!=='multi'&&portfolioTx.some(t=>t.type==='exchange'))throw Error('Un change nécessite des soldes par devise.');
+ const tx=portfolioTx.filter(t=>t.date<=endDate).slice().sort((a,b)=>a.date.localeCompare(b.date));
+ if(!tx.length)return {points:[],xirr:null,xirrReason:'Aucune transaction dans la période.'};
+ const indexed=indexBy(prices,r=>r.ticker,'price',true),fx=indexBy(rates,r=>r.from+'/'+r.to,'rate');
+ const holdings=new Map(),flows=[],points=[],balances={};
+ let cash=0,next=0,previous=0,index=100,chainKnown=true,funded=false,cashReason=null;
+ for(let ms=time(tx[0].date);ms<=time(endDate);ms+=DAY){
+  const date=new Date(ms).toISOString().slice(0,10),priceDates={},fxDates={};
+  const rate=currency=>{
+   if(currency==='EUR')return 1;
+   const row=asOf(fx.get(currency+'/EUR'),date);
+   if(row)fxDates[currency]=row.date;
+   return row?.rate??null;
+  };
+  let external=0;
+  while(next<tx.length&&tx[next].date===date){
+   const t=tx[next++],currency=t.currency||'EUR';
+   // Share cash settlement rules (including trade fees) with the transaction engine.
+   for(const [c,movement] of Object.entries(cashBalances([t],portfolioId))){
+    if(cashMode==='multi')balances[c]=(balances[c]||0)+movement;
+    else if(Math.abs(movement)>EPS){
+     const r=rate(c);
+     if(r===null){cash=null;cashReason='Taux historique manquant pour une transaction en '+c+'.'}
+     else if(cash!==null)cash+=movement*r;
+    }
+   }
+   if(t.type==='buy'||t.type==='sell')holdings.set(t.ticker,(holdings.get(t.ticker)||0)+(t.type==='buy'?1:-1)*Number(t.quantity));
+   if(t.type==='deposit'||t.type==='withdrawal'){
+    const r=rate(currency),amount=r===null?null:Number(t.amount)*r*(t.type==='deposit'?1:-1);
+    external=external===null||amount===null?null:external+amount;
+    flows.push({date,amount:amount===null?null:-amount});
+   }
+  }
+  let value=cashMode==='multi'?0:cash,valuationReason=cashMode==='multi'?null:cashReason;
+  if(cashMode==='multi')for(const [currency,amount] of Object.entries(balances)){
+   if(Math.abs(amount)<=EPS)continue;
+   const r=rate(currency);
+   if(r===null){value=null;valuationReason='Taux de change '+currency+'/EUR indisponible.';break}
+   value+=amount*r;
+  }
+  if(value!==null)for(const [ticker,quantity] of holdings){
+   if(Math.abs(quantity)<=EPS)continue;
+   const quote=asOf(indexed.get(ticker),date);
+   if(!quote||!quote.currency){value=null;valuationReason='Cours daté ou devise indisponible pour '+ticker+'.';break}
+   priceDates[ticker]=quote.date;
+   const r=rate(quote.currency);
+   if(r===null){value=null;valuationReason='Taux de change '+quote.currency+'/EUR indisponible.';break}
+   value+=quantity*quote.price*r;
+  }
+  if(value!==null&&!Number.isFinite(value)){value=null;valuationReason='Valorisation hors de la précision numérique disponible.'}
+  const inception=!funded&&external>EPS;
+  const daily=dailyFactor(previous,value,external);
+  funded ||= external>EPS;
+  if(funded){
+   if(daily.factor===null)chainKnown=false;
+   else if(chainKnown)index*=daily.factor;
+  }else if(value!==0)chainKnown=false;
+  points.push({date,value,externalFlow:external,returnFactor:daily.factor,inception,
+   index:funded&&chainKnown&&Number.isFinite(index)?index:null,reason:valuationReason||daily.reason,
+   priceDates,fxDates,carried:[...Object.values(priceDates),...Object.values(fxDates)].some(d=>d<date)});
+  previous=value;
+ }
+ const final=points.at(-1),irr=final.value===null?{value:null,reason:'La valorisation finale est indisponible.'}:xirrResult([...flows,{date:final.date,amount:final.value}]);
+ return {points,xirr:irr.value,xirrReason:irr.reason};
+}
+export function benchmarkSeries(points,prices,rates,symbol){
+ const indexed=indexBy(prices,r=>r.ticker,'price',true),fx=indexBy(rates,r=>r.from+'/'+r.to,'rate');
+ return points.map(point=>{
+  const quote=asOf(indexed.get(symbol),point.date),conversion=quote&&asOf(fx.get(quote.currency+'/EUR'),point.date);
+  const rate=quote?.currency==='EUR'?1:conversion?.rate??null;
+  return {date:point.date,value:quote&&rate!==null?quote.price*rate:null};
+ });
+}

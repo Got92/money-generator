@@ -86,8 +86,50 @@ try{
  const rates=await (await page.request.get(url+'/api/market/fx?from=USD&to=EUR')).json();
  assert(history.data.length>1&&rates.data.length>1);
  assert.equal(history.cache.status,'stale');
+
+ // PR 02: complete period controls, gap semantics and independent XIRR.
+ await rm(path.join(directory,'offline'));
+ await page.locator('[data-page="Dashboard"]').click();
+ const periods=['1D','1W','1M','3M','6M','YTD','1Y','3Y','5Y','MAX'];
+ assert.deepEqual(await page.locator('[data-period]').evaluateAll(nodes=>nodes.map(n=>n.dataset.period)),periods);
+ for(const period of periods.filter(p=>p!=='1D')){
+  await page.locator(`[data-period="${period}"]`).click();
+  await page.locator('#historyChart .performance-summary').first().waitFor();
+  assert.equal(await page.locator(`[data-period="${period}"]`).getAttribute('aria-pressed'),'true');
+  assert.doesNotMatch(await page.locator('#historyChart').textContent(),/NaN|Infinity/);
+ }
+ // Use the other fixture portfolio: no transaction on the latest session date.
+ await page.locator('#portfolio').selectOption('gap');
+ await page.locator('#historyChart .performance-summary').first().waitFor();
+ assert.match(await page.locator('#historyChart b').textContent(),/TWR indisponible/);
+ assert.doesNotMatch(await page.locator('#historyChart .performance-summary').first().textContent(),/XIRR.*indisponible/);
+ await page.locator('[data-period="1W"]').click();
+ await page.locator('#historyChart .performance-summary').first().waitFor();
+ assert.doesNotMatch(await page.locator('#historyChart b').textContent(),/indisponible/);
+ const portfolioTwr=await page.locator('#historyChart b').textContent();
+ await page.locator('#benchmark').selectOption('^GSPC');
+ await page.locator('#historyChart .performance-summary').first().waitFor();
+ assert.equal(await page.locator('#historyChart b').textContent(),portfolioTwr);
+ await page.locator('#benchmark').selectOption('none');
+ await page.locator('[data-period="1D"]').click();
+ await page.locator('#historyChart svg').waitFor();
+ assert.match(await page.locator('#historyChart b').textContent(),/Variation 1D/);
+
+ await page.locator('[data-period="MAX"]').click();
+ await page.locator('#historyChart .performance-summary').first().waitFor();
+ await page.locator('#portfolio').selectOption('stale');
+ await page.locator('#historyChart .performance-summary').first().waitFor();
+ assert.match(await page.locator('#historyChart b').textContent(),/TWR indisponible/);
+ assert.match(await page.locator('#historyChart .performance-summary').first().textContent(),/XIRR.*indisponible/);
+ assert.match(await page.locator('#historyStatus').textContent(),/finale est indisponible/);
+ const today=new Date().toISOString().slice(0,10);
+ assert.match(await page.locator('#historyChart').textContent(),new RegExp(today));
+ await page.setViewportSize({width:390,height:900});
+ const buttonBoxes=await page.locator('[data-period]').evaluateAll(nodes=>nodes.map(n=>({right:n.getBoundingClientRect().right,left:n.getBoundingClientRect().left})));
+ assert(buttonBoxes.every(box=>box.left>=0&&box.right<=390),'Les périodes doivent rester accessibles sur mobile.');
+ assert.equal((await (await page.request.get(url+'/api/state')).json()).revision,saved.revision);
  assert.deepEqual(errors,[]);
- console.log('PASS: chargement, rechargement, nouvel onglet, redémarrage serveur, taux corrigé et valorisation actualisée, panne cours/change, avertissements et sauvegarde sans purge.');
+ console.log('PASS: persistance PR 01 ; périodes PR 02 sur ordinateur/mobile, reprise après lacune, XIRR indépendant, benchmark sans changement de TWR, intraday, extrémité absente et transactions inchangées pendant les calculs.');
 }finally{
  if(browser)await browser.close();
  if(child&&child.exitCode===null)await stopServer();

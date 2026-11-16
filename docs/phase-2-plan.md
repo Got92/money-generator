@@ -2,7 +2,7 @@
 
 ## Révision et méthode
 
-Audit du 16 novembre 2026 sur `origin/main` **50a0e64c72f787b5d92a42aefa350a0b4835fd6b**, après `git fetch origin main`. Le checkout initial `422665a` était en retard de deux commits. Branche de la première PR : `codex/atlas-p0-history-cache`. Aucun changement sur `main`. Les étapes suivantes attendent la validation de cette PR ; elles ne sont pas développées en parallèle.
+Audit du 16 novembre 2026 sur `origin/main` **50a0e64c72f787b5d92a42aefa350a0b4835fd6b**, après `git fetch origin main`. Le checkout initial `422665a` était en retard de deux commits. Branche de la première PR : `codex/atlas-p0-history-cache`. Aucun changement sur `main`. Après livraison de PR 01, l'utilisateur a autorisé le passage à PR 02. PR 01 reste en brouillon : PR 02 est donc développée sur sa branche dans une PR dépendante, sans fusion automatique. Les étapes avancées restent à réaliser séquentiellement.
 
 ## Comparaison au code réel
 
@@ -30,7 +30,7 @@ Chaque ligne est une PR avec code, tests, limites et bilan. Les numéros désign
 
 | PR | Objectif et fichiers principaux | Migration | Validation / dépendances |
 |---|---|---|---|
-| **01 — Historiques durables (seule PR implémentée ici)** | `history_store.py`, `server.py`, `market.py`, `session-market.js`, textes des pages, tests, documentation : conserver l'existant, cache SQLite, provenance, actualisation incrémentale, secours en panne et couverture | v1 additive : registre `schema_migrations`, observations FX par fournisseur et métadonnées de récupération ; réutiliser `prices`, importer les anciens taux sans supprimer leur source | Migration pré/post-drapeau éphémère, idempotence, sauvegarde sans purge, rechargement, chevauchement, déduplication, échec fournisseur, requêtes concurrentes, métadonnées visibles |
+| **01 — Historiques durables (livrée en brouillon)** | `history_store.py`, `server.py`, `market.py`, `session-market.js`, textes des pages, tests, documentation : conserver l'existant, cache SQLite, provenance, actualisation incrémentale, secours en panne et couverture | v1 additive : registre `schema_migrations`, observations FX par fournisseur et métadonnées de récupération ; réutiliser `prices`, importer les anciens taux sans supprimer leur source | Migration pré/post-drapeau éphémère, idempotence, sauvegarde sans purge, rechargement, chevauchement, déduplication, échec fournisseur, requêtes concurrentes, métadonnées visibles |
 | 02 — Performances fiables | `performance.js`, `finance.js`, `intraday.js`, `performance-ui.js`, tests : toutes les périodes, bornes calendaires, TWR/XIRR et données manquantes | Aucune prévue ; ne pas changer l'heure des flux existants | Dépôts/retraits, frais, dividendes, achats/ventes, liquidation, valeur zéro puis réinvestissement, change, week-ends, trous, XIRR ambigu ; dépend de 01 |
 | 03 — Registre des benchmarks | Nouveau `benchmarks.js`, adaptateurs marché, UI performance et tests : six indices, variantes PR/TR explicites et proxies signalés | Métadonnées des séries uniquement si nécessaires | Dates de début **et de fin** communes, change historique, absence de TR, série indisponible, absence de dividendes fictifs ; dépend de 01–02 |
 | 04 — Diversification et bilan P0 | Nouveau module allocation, `dashboard.js`, page Analytics extraite de `app.js`, profil marché | Classe d'actif nullable dans le profil existant | Industrie, devise, pays, classe inconnue explicite ; dénominateurs investi / cash inclus, valeurs manquantes ; dépend de 01–02 ; passage de toutes les suites avant les modules avancés |
