@@ -1,0 +1,24 @@
+import {chromium} from 'playwright-core';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createInterface} from 'node:readline';
+import assert from 'node:assert/strict';
+const dir=mkdtempSync(join(tmpdir(),'atlas-quality-'));
+const server=spawn(process.env.ATLAS_PYTHON||'.venv/bin/python',['tests/browser_quality_fixture.py'],{env:{...process.env,ATLAS_DB:join(dir,'test.sqlite'),ATLAS_BROWSER_FIXTURE_DIR:dir},stdio:['ignore','pipe','inherit']});
+let browser;
+try {
+ const lines=createInterface({input:server.stdout});const [port]=await once(lines,'line');const url=`http://127.0.0.1:${port}`;
+ browser=await chromium.launch({headless:true,executablePath:process.env.ATLAS_CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox']});const page=await browser.newPage();
+ await page.goto(url);const initial=await (await page.request.get(url+'/api/state')).json();
+ const fixture={portfolios:[{id:'test',name:'Synthétique',currency:'EUR'}],transactions:[],watchlist:['SYNTH'],marketData:{SYNTH:{name:'Fixture synthétique',symbol:'SYNTH',source:'Fixture',fetchedAt:'2024-12-31',sector:'Technology',metrics:{}}}};
+ assert.equal((await page.request.put(url+'/api/state',{data:{revision:initial.revision,data:fixture}})).status(),200);
+ await page.reload();await page.locator('[data-page="Watchlist"]').click();await page.locator('[data-company="SYNTH"]').click();await page.locator('#loadQuality').click();
+ await page.getByText('100 / 100',{exact:false}).first().waitFor();assert.match(await page.locator('#qualityResult').innerText(),/Couverture.*90/);assert.equal(await page.locator('#qualityResult svg').count(),1);
+ await page.locator('input[name="growth"]').fill('15');await page.locator('input[name="cash"]').fill('25');await page.getByText('Enregistrer les pondérations').click();await page.waitForFunction(()=>document.querySelector('input[name="cash"]')?.value==='25');
+ await page.reload();await page.locator('[data-page="Watchlist"]').click();await page.locator('[data-company="SYNTH"]').click();await page.locator('#loadQuality').click();await page.waitForSelector('input[name="cash"]');assert.equal(await page.locator('input[name="cash"]').inputValue(),'25');
+ assert.equal((await page.request.put(url+'/api/fundamentals/quality',{data:{weights:{cash:100}}})).status(),400);
+ console.log('PASS: navigation réelle, API de score et poids persistés, validation et radar synthétiques.');
+} finally {if(browser)await browser.close();if(server.exitCode===null){const stopped=once(server,'exit');server.kill();await stopped}rmSync(dir,{recursive:true,force:true})}

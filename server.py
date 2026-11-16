@@ -6,6 +6,8 @@ from urllib.parse import urlsplit, parse_qs
 import market
 import history_store
 import fundamental_store
+import quality_store
+import quality_score
 import fundamental_metrics
 
 ROOT = Path(__file__).resolve().parent
@@ -28,6 +30,7 @@ def connect():
     with db:
         history_store.migrate(db)
         fundamental_store.migrate(db)
+        quality_store.migrate(db)
         if not db.execute("SELECT 1 FROM schema_meta WHERE key='normalized_v1'").fetchone():
             row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
             if row: write_collections(db,json.loads(row[0]))
@@ -102,6 +105,7 @@ def valid(data):
 
 history_cache = history_store.HistoryCache(connect)
 fundamental_history = fundamental_store.FundamentalStore(connect)
+quality_config = quality_store.QualityStore(connect)
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw): super().__init__(*a,directory=str(ROOT),**kw)
@@ -132,6 +136,24 @@ class Handler(SimpleHTTPRequestHandler):
                 result.update(symbol=history['symbol'], asOf=as_of, fetch=history['fetch'])
                 return self.respond(200,result)
             except ValueError as e: return self.respond(400,{'error':str(e)})
+        if path=='/api/fundamentals/quality':
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                symbol=params.get('symbol',[''])[0]
+                as_of=params.get('asOf',[None])[0]
+                history=fundamental_history.get(symbol,'annual',False,as_of)
+                with connect() as db:
+                    row=db.execute('SELECT payload FROM instruments WHERE ticker=?',(symbol.upper(),)).fetchone()
+                profile=json.loads(row[0]) if row and as_of is None else None
+                from fundamental_metrics import calculate_fundamentals
+                ratios=calculate_fundamentals(history['data'],period='annual',profile=profile)
+                sector=ratios.get('methodology',{}).get('sectorType','unknown')
+                result=quality_score.score_company(ratios,quality_config.weights(),sector)
+                result.update({'symbol':symbol.upper(),'asOf':as_of,'fetch':history['fetch'],
+                    'history':{'data':[],'reason':'Historique indisponible sans dates de disponibilité et versions calculées à chaque date.'},
+                    'peers':{'data':[],'reason':'Aucun échantillon de scores sectoriels comparables persisté.'}})
+                return self.respond(200,result)
+            except ValueError as e: return self.respond(400,{'error':str(e)})
         if path=='/api/fundamentals/history':
             params=parse_qs(urlsplit(self.path).query)
             try: return self.respond(200,fundamental_history.get(params.get('symbol',[''])[0],params.get('period',['annual'])[0],params.get('refresh',['0'])[0]=='1',params.get('asOf',[None])[0]))
@@ -157,12 +179,19 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond(200,{'data':result})
             except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path.startswith('/api/'): return self.respond(404,{'error':'Introuvable'})
-        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js'): return self.send_error(404)
+        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js','/src/quality-ui.js'): return self.send_error(404)
         super().do_GET()
     def do_PUT(self):
-        if self.path!='/api/state': return self.respond(404,{'error':'Introuvable'})
         if self.headers.get('Origin') not in (None, f'http://localhost:{self.server.server_port}', f'http://127.0.0.1:{self.server.server_port}'):
             return self.respond(403,{'error':'Origine non autorisée'})
+        if self.path=='/api/fundamentals/quality':
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if length<=0 or length>4096: raise ValueError('Taille invalide.')
+                obj=json.loads(self.rfile.read(length))
+                return self.respond(200,{'weights':quality_config.save(obj['weights'])})
+            except (ValueError,KeyError,TypeError,json.JSONDecodeError) as e: return self.respond(400,{'error':str(e)})
+        if self.path!='/api/state': return self.respond(404,{'error':'Introuvable'})
         try:
             length=int(self.headers.get('Content-Length','0'))
             if length<=0 or length>5_000_000: raise ValueError('Taille de sauvegarde invalide.')
