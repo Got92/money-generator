@@ -84,11 +84,12 @@ def company(symbol):
             'warnings':warnings, 'source':'Yahoo Finance (yfinance)',
             'fetchedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}
 
-def fx_history(source, target):
+def fx_history(source, target, start=None, end=None):
     if not all(isinstance(c,str) and re.fullmatch(r'[A-Z]{3}',c) for c in (source,target)) or source==target:
         raise MarketError('Paire de devises invalide.')
     try:
-        history=yf.Ticker(source+target+'=X').history(period='max', interval='1d', auto_adjust=False, timeout=12, raise_errors=True)
+        window={'start':start,'end':end} if start else {'period':'max'}
+        history=yf.Ticker(source+target+'=X').history(**window, interval='1d', auto_adjust=False, timeout=12, raise_errors=True)
         rates=[]
         for day, row in history.iterrows():
             rate=num(row.get('Close'))
@@ -99,13 +100,14 @@ def fx_history(source, target):
     except Exception:
         raise MarketError('Historique de change Yahoo Finance indisponible pour cette paire.') from None
 
-def price_history(symbol):
+def price_history(symbol, start=None, end=None):
     if not isinstance(symbol,str) or not re.fullmatch(r'[A-Za-z0-9.\-^=]{1,32}',symbol):
         raise MarketError('Symbole invalide.')
     symbol=symbol.upper()
     try:
         ticker=yf.Ticker(symbol)
-        history=ticker.history(period='max',interval='1d',auto_adjust=False,timeout=12,raise_errors=True)
+        window={'start':start,'end':end} if start else {'period':'max'}
+        history=ticker.history(**window,interval='1d',auto_adjust=False,timeout=12,raise_errors=True)
         currency=ticker.history_metadata.get('currency')
         if not isinstance(currency,str) or not re.fullmatch(r'[A-Z]{3}',currency):
             raise ValueError('Devise inconnue')

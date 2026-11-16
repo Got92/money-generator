@@ -64,4 +64,16 @@ class ProviderTest(unittest.TestCase):
         self.assertEqual(result['sessionDate'],'2024-01-02')
         self.assertEqual(result['points'][0]['timestamp'],'2024-01-02T09:00:00Z')
         self.assertEqual(result['points'][1]['price'],101)
+    def test_incremental_history_passes_explicit_bounds_instead_of_max(self):
+        import pandas as pd
+        history=pd.DataFrame({'Close':[10.0]},index=pd.to_datetime(['2024-01-03']))
+        with patch.object(market.yf,'Ticker') as ticker:
+            ticker.return_value.history.return_value=history
+            ticker.return_value.history_metadata={'currency':'USD'}
+            market.price_history('IBM',start='2024-01-02',end='2024-01-04')
+            kwargs=ticker.return_value.history.call_args.kwargs
+            self.assertEqual((kwargs['start'],kwargs['end']),('2024-01-02','2024-01-04'))
+            self.assertNotIn('period',kwargs)
+            market.fx_history('USD','EUR',start='2024-01-02',end='2024-01-04')
+            self.assertNotIn('period',ticker.return_value.history.call_args.kwargs)
 if __name__=='__main__':unittest.main()
