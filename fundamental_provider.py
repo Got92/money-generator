@@ -5,6 +5,7 @@ Dates on Yahoo statement columns are period ends, not publication dates.
 from abc import ABC, abstractmethod
 import math
 import re
+from numpy import bool_
 import yfinance as yf
 
 SOURCE = 'Yahoo Finance (yfinance)'
@@ -54,6 +55,7 @@ def normalize(frames, currency):
                 for label in aliases:
                     if label not in frame.index: continue
                     raw = frame.loc[label, column]
+                    if isinstance(raw, (bool, bool_)): continue
                     try: value = float(raw)
                     except (ValueError, TypeError): continue
                     if not math.isfinite(value): continue

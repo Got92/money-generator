@@ -9,3 +9,37 @@ Le fournisseur est interchangeable via `FundamentalProvider`. Seul Yahoo Finance
 Chaque changement d'une observation d'une source crée une révision ; une répétition identique est dédupliquée. La réponse ordinaire présente la dernière révision par source, indicateur et période ; les révisions précédentes restent dans SQLite. Une donnée absente à l'actualisation ne supprime pas les valeurs précédentes. Les fins de période Yahoo ne sont pas des dates de publication : pour ce fournisseur, année et trimestre fiscaux et dates de publication/disponibilité restent inconnus. Les requêtes `asOf` n'incluent que les observations avec date de disponibilité connue et au plus égale à la date demandée, date de publication non postérieure si connue, et première récupération de cette révision au plus tard à cette date. Cette règle conservatrice exclut les historiques Yahoo actuels et peut aussi exclure des données pourtant publiées auparavant mais récupérées plus tard. Elle empêche d'utiliser une révision ultérieure comme si elle était connue dans le passé.
 
 Yahoo peut limiter la profondeur, la disponibilité ou les champs ; aucun historique ni date de publication n'est inventé. Des données Yahoo partiellement manquantes ne doivent pas être interprétées comme des zéros ; l'identité par symbole est stable dans la base mais ne résout pas les changements de ticker ou collisions entre places boursières. Les analyses de ratios, scores et graphiques relèvent des PR suivantes.
+
+
+## Fichiers et intégration
+
+La PR 05 est intégrée sur PR 04 après le [bilan P0 combiné](p0-validation.md), lui-même effectué sur PR 03. Les conflits dans les modules statiques, l'orchestration et les scripts de test ont été résolus en conservant les fonctionnalités des trois PR. `main` n'est pas modifiée par ces nouvelles branches.
+
+| Fichiers | Modification |
+|---|---|
+| `fundamental_provider.py` | Interface de fournisseur, adaptateur Yahoo annuel/trimestriel, métriques et unités normalisées, signes conservés, booléens et valeurs non financières rejetés, devise courante identifiée comme non vérifiée historiquement |
+| `fundamental_store.py` | Migration v2 additive, instruments identifiés, observations brutes et normalisées révisables, déduplication, couverture et champs absents par période, filtrage historique conservateur |
+| `server.py` | Application transactionnelle de la migration et API d'historiques ; modules statiques existants préservés |
+| `src/fundamental-ui.js`, `src/research.js`, `src/app.js` | Consultation française, chargement/erreur/vide, export JSON réel, avertissements de devise et métriques manquantes ; absence de chargement réel pour une entreprise fictive de démonstration sans profil réel |
+| `tests/test_fundamentals.py`, `tests/test_server.py`, `tests/test_history_store.py` | Fournisseur, périodes, métadonnées, révisions, dates, absence d'anticipation, réponses invalides, migration et conservation de l'état/prix/change/snapshots lors des sauvegardes |
+| `scripts/check-fundamentals-browser.mjs`, `package.json` | Navigation réelle jusqu'à la fiche depuis la watchlist, séparation démo, JSON téléchargé et relu, annuel/trimestriel, données manquantes et erreur sur base jetable ; ajout aux deux parcours navigateur existants |
+
+## Validation finale cumulée
+
+- **73 tests JavaScript**, **40 tests Python**, aucun échec restant. La suite Python inclut le contrôle indépendant XIRR sur 200 registres.
+- **Trois parcours Chromium réussis** : historique/performance/benchmarks (ordinateur et mobile), diversification, et fiche entreprise avec états financiers et téléchargement JSON.
+- `git diff --check` et vérification syntaxique des modules modifiés réussis.
+- Tests réseau réels isolés : IBM annuel, **80 observations**, fins de période du **2022-12-31 au 2025-12-31** ; IBM trimestriel, **100 observations**, fins de période du **2025-09-30 au 2026-09-30**. Ces couvertures décrivent la réponse obtenue, pas une garantie de continuité future. Les observations manquantes sont indiquées par la couverture.
+
+Commandes reproductibles depuis le dépôt, après installation des dépendances et de Chromium :
+
+```bash
+npm test
+ATLAS_DB=/chemin/jetable/atlas-tests.sqlite3 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+npm run test:browser
+git diff --check
+```
+
+`ATLAS_PYTHON` et `ATLAS_CHROMIUM` permettent d'adapter le parcours navigateur. Les répertoires temporaires suivent `TMPDIR` si défini ; les tests n'ouvrent jamais la base personnelle. Les données synthétiques du navigateur sont étiquetées comme fixtures et ne sont pas ajoutées aux analyses réelles.
+
+Le moteur et l'API sont opérationnels pour les données effectivement disponibles. La date de publication/ disponibilité et les identifiants fiscaux Yahoo restent inconnus ; ces données sont exclues de l'analyse historique `asOf`. La devise des périodes passées n'est pas confirmée par une métadonnée actuelle : la provenance et l'interface le signalent. Les ratios, graphiques fondamentaux complets, scores et valorisations historiques restent dans PR 06 et suivantes.

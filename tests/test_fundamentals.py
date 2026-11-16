@@ -82,6 +82,11 @@ class FundamentalTest(unittest.TestCase):
         self.assertEqual(set(by),{'revenue','diluted_average_shares','capex'})
         self.assertEqual(by['capex']['value'],-20); self.assertIsNone(by['diluted_average_shares']['currency'])
         self.assertIsNone(by['revenue']['availableAt']); self.assertIsNone(by['revenue']['fiscalYear'])
+    def test_boolean_provider_flags_are_not_financial_amounts(self):
+        frame=pd.DataFrame({pd.Timestamp('2023-12-31'):[True,False]},index=['Total Revenue','Gross Profit'])
+        self.assertEqual(provider.normalize({'income':frame},'USD'),[])
+        zero=pd.DataFrame({pd.Timestamp('2023-12-31'):[0]},index=['Total Revenue'])
+        self.assertEqual(provider.normalize({'income':zero},'USD')[0]['value'],0)
     def test_adapter_annual_and_quarterly_mapping_and_currency_provenance(self):
         annual=pd.DataFrame({pd.Timestamp('2023-12-31'):[100,4]},index=['Total Revenue','Diluted EPS'])
         quarterly=pd.DataFrame({pd.Timestamp('2024-03-31'):[25]},index=['Total Revenue'])
