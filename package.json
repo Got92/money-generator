@@ -5,7 +5,7 @@
   "scripts": {
     "start": ".venv/bin/python server.py",
     "test": "node --test",
-    "test:browser": "node scripts/check-history-browser.mjs && node scripts/check-allocation-browser.mjs && npm run test:fundamentals-browser && npm run test:company-dashboard-browser && npm run test:scenarios-browser && npm run test:advanced-valuation-browser",
+    "test:browser": "node scripts/check-history-browser.mjs && node scripts/check-allocation-browser.mjs && npm run test:fundamentals-browser && npm run test:company-dashboard-browser && npm run test:scenarios-browser && npm run test:advanced-valuation-browser && node scripts/check-targets-browser.mjs",
     "test:fundamentals-browser": "node scripts/check-fundamentals-browser.mjs",
     "test:company-dashboard-browser": "node scripts/check-company-dashboard-browser.mjs",
     "test:scenarios-browser": "node scripts/check-scenarios-browser.mjs",

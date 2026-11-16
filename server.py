@@ -1,3 +1,4 @@
+import allocation_targets
 import scenario_store
 import valuation_history
 """Local-only API and static server for Atlas. SQLite is kept outside the web root."""
@@ -35,6 +36,7 @@ def connect():
         quality_store.migrate(db)
         valuation_history.migrate(db)
         scenario_store.migrate(db)
+        allocation_targets.migrate(db)
         if not db.execute("SELECT 1 FROM schema_meta WHERE key='normalized_v1'").fetchone():
             row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
             if row: write_collections(db,json.loads(row[0]))
@@ -206,8 +208,13 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 with connect() as db: return self.respond(200,scenario_store.get(db,parse_qs(urlsplit(self.path).query).get('symbol',[''])[0]))
             except ValueError as e: return self.respond(400,{'error':str(e)})
+        if path=='/api/portfolio/targets':
+            try:
+                with connect() as db: result=allocation_targets.get(db,parse_qs(urlsplit(self.path).query).get('portfolioId',[''])[0])
+                return self.respond(200,result)
+            except ValueError as e: return self.respond(400,{'error':str(e)})
         if path.startswith('/api/'): return self.respond(404,{'error':'Introuvable'})
-        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js','/src/quality-ui.js','/src/historical-valuation-ui.js','/src/scenario-model.js','/src/scenario-ui.js','/src/advanced-valuation.js','/src/advanced-valuation-ui.js'): return self.send_error(404)
+        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js','/src/quality-ui.js','/src/historical-valuation-ui.js','/src/scenario-model.js','/src/scenario-ui.js','/src/advanced-valuation.js','/src/advanced-valuation-ui.js','/src/target-allocation.js','/src/target-allocation-ui.js'): return self.send_error(404)
         super().do_GET()
     def do_PUT(self):
         if self.headers.get('Origin') not in (None, f'http://localhost:{self.server.server_port}', f'http://127.0.0.1:{self.server.server_port}'):
@@ -220,6 +227,16 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond(200,{'weights':quality_config.save(obj['weights'])})
             except (ValueError,KeyError,TypeError,json.JSONDecodeError) as e: return self.respond(400,{'error':str(e)})
         if urlsplit(self.path).path=='/api/valuation/scenarios': return self.scenario_write(False)
+        if self.path not in ('/api/state','/api/portfolio/targets'): return self.respond(404,{'error':'Introuvable'})
+        if self.path=='/api/portfolio/targets':
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if length<=0 or length>5_000_000: raise ValueError('Taille invalide.')
+                obj=json.loads(self.rfile.read(length))
+                with lock, connect() as db: result=allocation_targets.put(db,obj)
+                return self.respond(200,result)
+            except RuntimeError as e: return self.respond(409,{'error':str(e)})
+            except (ValueError,KeyError,TypeError,json.JSONDecodeError) as e: return self.respond(400,{'error':str(e)})
         if self.path!='/api/state': return self.respond(404,{'error':'Introuvable'})
         try:
             length=int(self.headers.get('Content-Length','0'))
