@@ -11,3 +11,5 @@ Après intégration PR10, le sélecteur charge les scénarios sauvegardés via `
 ## Vérification
 
 `npm test` : 77 tests réussis ; `TMPDIR=/workspace/work ATLAS_DB=/workspace/work/pr11-test.sqlite3 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'` : 40 réussis ; `TMPDIR=/workspace/work npm run test:browser` : trois suites existantes réussies ; `TMPDIR=/workspace/work node scripts/check-advanced-valuation-browser.mjs` : navigation réelle, saisie, calcul, matrices, synthèse et absence de racine réussis. Les scénarios sauvegardés exigent un test d'intégration après assemblage de PR10.
+
+La synthèse peut charger une estimation historique issue de PR 09 : médiane PER TTM sur cinq ans multipliée par le BPA du dernier instantané, uniquement dans la même devise. Source, dates et nombre réel d’observations sont copiés avec l’estimation. L’utilisateur doit encore confirmer la pertinence et le poids ; une observation unique ne devient pas un historique de cinq ans.
