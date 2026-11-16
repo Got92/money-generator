@@ -106,8 +106,10 @@ export function performanceSeries(transactions,portfolioId,prices,rates,endDate=
 export function benchmarkSeries(points,prices,rates,symbol){
  const indexed=indexBy(prices,r=>r.ticker,'price',true),fx=indexBy(rates,r=>r.from+'/'+r.to,'rate');
  return points.map(point=>{
-  const quote=asOf(indexed.get(symbol),point.date),conversion=quote&&asOf(fx.get(quote.currency+'/EUR'),point.date);
-  const rate=quote?.currency==='EUR'?1:conversion?.rate??null;
-  return {date:point.date,value:quote&&rate!==null?quote.price*rate:null};
+  const quote=asOf(indexed.get(symbol),point.date);
+  const currency=typeof quote?.currency==='string'&&/^[A-Z]{3}$/.test(quote.currency)?quote.currency:null;
+  const conversion=currency&&asOf(fx.get(currency+'/EUR'),point.date);
+  const rate=currency==='EUR'?1:conversion?.rate??null;
+  return {date:point.date,value:quote&&quote.price>0&&rate!==null?quote.price*rate:null};
  });
 }

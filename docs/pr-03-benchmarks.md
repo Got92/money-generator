@@ -1,0 +1,17 @@
+# PR 03 — Comparaison des benchmarks
+
+## Contrat et sources
+
+Le registre `src/benchmarks.js` contient six références. Les séries quotidiennes sont les clôtures Yahoo Finance fournies par `market.price_history` (`auto_adjust=False`), persistées par symbole dans le cache SQLite existant ; l'intraday reste en direct. S&P 500 : `^GSPC` prix et `^SP500TR` total return ; Nasdaq 100 : `^NDX` prix et `^XNDX` total return ; CAC 40 : `^FCHI` prix ; STOXX Europe 600 : `^STOXX` prix ; Euro STOXX 50 : `^STOXX50E` prix ; MSCI World : cours de l'ETF `URTH`, proxy explicitement identifié, sans distributions. La disponibilité effective dépend du fournisseur et de sa couverture : une erreur ou une lacune n'est jamais remplacée silencieusement par une autre série. Aucun historique ou dividende n'est inventé et aucune série ETF ajustée n'est présentée comme un indice TR. Des variantes TR supplémentaires nécessitent une identification et une validation du fournisseur avant ajout.
+
+Yahoo identifie [S&P 500 TR](https://finance.yahoo.com/quote/%5ESP500TR/history/), [Nasdaq 100 Total Return](https://de.finance.yahoo.com/quote/%5EXNDX/) et [URTH](https://finance.yahoo.com/quote/URTH/) ; le prix de l'ETF n'est pas la performance totale de l'indice. Test réel du 16 novembre 2026 via `market.price_history` : `^SP500TR` a retourné 9 791 clôtures USD du 4 janvier 1988 au 13 novembre 2026 ; `^XNDX` a échoué (historique indisponible ou devise inconnue), malgré son identification par Yahoo. Il reste sélectionnable avec un avertissement de disponibilité incertaine et aucun remplacement automatique. Yahoo peut refuser ou limiter les téléchargements, notamment pour les indices TR. Les données de test sont synthétiques.
+
+## Calcul
+
+Le TWR autonome conserve sa fenêtre, y compris ses éventuelles dates indisponibles. La comparaison trouve le premier et dernier jour avec valorisation du portefeuille, prix et change EUR disponibles, puis recalcule les deux rendements entre ces mêmes clôtures. La première clôture commune est une base à zéro, même si elle est le jour de financement ; ce rendement peut donc différer du TWR autonome qui inclut les frais de ce jour. Le graphique comparatif est normalisé sur cette fenêtre commune ; les deux plages sont affichées. Une lacune interne de valorisation, de rendement, de prix ou de change invalide la comparaison. Les cours et taux ne proviennent jamais du futur et sont reportés au maximum sept jours. Le report peut comprendre des jours sans cotation : la couverture ne garantit pas une observation chaque jour ouvré. Le cache affiche sa provenance, sa fraîcheur et ses dates.
+
+En 1D, le rendement autonome reste fondé sur les points du portefeuille ; une comparaison n'est tracée que si chaque point entre ses deux extrémités dispose de cours et de change antérieurs d'au plus 30 minutes. Les transactions de la séance demeurent bloquantes faute d'heure connue. Les jours de cotation différents, l'heure des clôtures et les frais ou dividendes du proxy peuvent limiter l'interprétation économique malgré des dates communes.
+
+## Validation
+
+`npm test`, `ATLAS_DB=/workspace/work/pr3-tests.sqlite3 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'`, `npm run test:browser`, `git diff --check`. Les tests couvrent le registre, les variantes et proxy, les bornes communes, les données futures/absentes/périmées, les lacunes, la normalisation et les interactions navigateur. Aucune migration ou donnée utilisateur modifiée.
