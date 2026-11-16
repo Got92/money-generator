@@ -69,7 +69,10 @@ def company(symbol):
     fields = {'marketCap':'marketCap', 'revenue':'totalRevenue', 'ebitda':'ebitda',
               'eps':'trailingEps', 'pe':'trailingPE', 'operatingMargin':'operatingMargins',
               'profitMargin':'profitMargins', 'roe':'returnOnEquity', 'shares':'sharesOutstanding',
-              'bookValue':'bookValue', 'evEbitda':'enterpriseToEbitda'}
+              'bookValue':'bookValue', 'evEbitda':'enterpriseToEbitda',
+              'enterpriseValue':'enterpriseValue', 'forwardPE':'forwardPE', 'priceSales':'priceToSalesTrailing12Months',
+              'freeCashFlow':'freeCashflow', 'totalDebt':'totalDebt', 'totalCash':'totalCash',
+              'forwardEps':'forwardEps'}
     metrics = {key:num(info.get(name)) for key,name in fields.items()}
     # Yahoo's dividendYield is quoted in percentage points; UI expects a fractional ratio.
     dividend = num(info.get('dividendYield'))

@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createInterface} from 'node:readline';
+import {chromium} from 'playwright-core';
+const root=fileURLToPath(new URL('..',import.meta.url)), dir=await mkdtemp(path.join(tmpdir(),'atlas-phase2-'));
+let server,browser;
+try {
+ server=spawn(process.env.ATLAS_PYTHON||path.join(root,'.venv/bin/python'),['tests/browser_phase2_fixture.py'],{cwd:root,env:{...process.env,ATLAS_DB:path.join(dir,'atlas.sqlite3'),ATLAS_BROWSER_FIXTURE_DIR:dir},stdio:['ignore','pipe','pipe']});
+ let logs='';server.stderr.on('data',b=>logs+=b.toString());
+ const lines=createInterface({input:server.stdout});
+ const url=await Promise.race([once(lines,'line').then(([s])=>JSON.parse(s).url),once(server,'exit').then(()=>{throw Error(logs)})]);
+ browser=await chromium.launch({executablePath:process.env.ATLAS_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+ const page=await browser.newPage(), errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const get=async route=>{const r=await page.request.get(url+route);assert.equal(r.status(),200,route);return r.json()};
+ const before=await get('/api/state');
+ const ratios=await get('/api/fundamentals/ratios?symbol=SYNTHCO');
+ assert.equal(ratios.points.length,7);assert.ok(ratios.latest.ratios.revenue_cagr_3y.value>.09);
+ assert.equal((await get('/api/fundamentals/ratios?symbol=SYNTHCO&period=ttm')).latest.metrics.free_cash_flow.value,150);
+ await get('/api/fundamentals/quality?symbol=PEERCO');
+ const quality=await get('/api/fundamentals/quality?symbol=SYNTHCO');
+ assert.equal(typeof quality.score,'number');assert.equal(quality.history.data.length,1);assert.equal(quality.peers.sampleSize,1);
+ assert.equal((await get('/api/fundamentals/quality?symbol=SYNTHCO&asOf=2000-01-01')).score,null);
+ await get('/api/market/company?symbol=SYNTHCO');
+ const history=await get('/api/valuation/history?symbol=SYNTHCO');
+ for(const k of ['per','forward_per','ev_ebitda','price_sales','ev_ebit','price_fcf','ev_fcf','fcf_yield'])assert.equal(history.metrics[k].count,1,k);
+ assert.equal(history.metrics.fcf_yield.current.value,.075);
+ const scenario={name:'Base',method:'FCFF',projectionMode:'growth',initialFcf:150,years:Array.from({length:5},()=>({growth:.1})),discount:.1,terminalGrowth:.02,postYear5Growth:.02,netDebt:100,shares:100,marginOfSafety:.2,currency:'EUR',unit:'EUR'};
+ assert.equal((await page.request.put(url+'/api/valuation/scenarios?symbol=SYNTHCO',{data:scenario})).status(),200);
+ assert.equal((await page.request.put(url+'/api/portfolio/targets',{data:{portfolioId:'integration',basis:'total',targets:[{dimension:'position',key:'SYNTHCO',min:.05,target:.2,max:.4}]}})).status(),200);
+ await page.goto(url);await page.locator('.nav[data-page="Portefeuilles"]').click();await page.locator('[data-target-row]').waitFor();
+ assert.equal(await page.locator('[data-field="target"]').inputValue(),'20');
+ await page.locator('[data-page="Watchlist"]').click();await page.locator('[data-company="SYNTHCO"]').click();
+ await page.locator('#dashboardLoad').click();await page.locator('#dashboardResult svg').waitFor();
+ await page.selectOption('#dashboardPeriod','ttm');await page.locator('#dashboardResult').getByText(/4 période/).waitFor();
+ await page.locator('#loadQuality').click();await page.locator('#qualityResult').getByText(/PEERCO/).waitFor();
+ await page.locator('#advancedValuation [name="dcfSource"] option[value="Base"]').waitFor({state:'attached'});
+ await page.locator('#scenarioForm').waitFor();await page.selectOption('#scenarioName','Base');assert.equal(await page.locator('#scenarioForm [name="shares"]').inputValue(),'100');
+ const f=page.locator('#advancedValuation');
+ for(const [k,v] of Object.entries({currency:'EUR',fcf:'150',price:'20',growth:'10',discount:'10',terminal:'2',shares:'100'}))await f.locator(`[name="${k}"]`).fill(v);
+ await f.locator('#advancedLoadHistorical').click();await f.locator('#advancedHistoricalStatus').getByText(/Estimation chargée/).waitFor();assert.equal(await f.locator('[name="historicalValue"]').inputValue(),'20');await f.locator('[name="dcfSource"]').selectOption('Base');await f.locator('button[type="submit"]').click();
+ assert.match(await f.locator('#advancedResult').innerText(),/Scénario sauvegardé Base/);
+ await page.locator('[data-reinforcement="SYNTHCO"]').click();await page.locator('#reinforcementForm [name="size"]').fill('110');await page.locator('#reinforcementForm [name="fee"]').fill('10');await page.locator('#reinforcementForm button.primary').click();
+ await page.locator('#reinforcementResult').getByText(/Cible enregistrée/).waitFor();
+ assert.match(await page.locator('#reinforcementResult').innerText(),/Base: [-\d,]+ %/);
+ assert.match(await page.locator('#reinforcementResult').innerText(),/achat 5/);
+ assert.deepEqual(await get('/api/state'),before);assert.deepEqual(errors,[]);
+ // Portfolio writes must preserve all independent research/configuration tables.
+ assert.equal((await page.request.put(url+'/api/state',{data:before})).status(),200);
+ assert.equal((await get('/api/valuation/scenarios?symbol=SYNTHCO')).scenarios[0].name,'Base');
+ assert.equal((await get('/api/portfolio/targets?portfolioId=integration')).targets[0].target,.2);
+ assert.equal((await get('/api/valuation/history?symbol=SYNTHCO')).metrics.price_fcf.count,1);
+ assert.equal((await get('/api/fundamentals/quality?symbol=SYNTHCO')).history.data.length,1);
+ console.log('PASS: actual stores, ratios, TTM, quality history/peers, eight multiples, saved scenarios/targets, advanced valuation, reinforcement and state preservation.');
+}finally{
+ if(browser)await browser.close();
+ if(server&&server.exitCode===null){const stopped=once(server,'exit');server.kill();await stopped}
+ await rm(dir,{recursive:true,force:true});
+}

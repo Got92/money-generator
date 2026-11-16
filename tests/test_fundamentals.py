@@ -38,7 +38,7 @@ class FundamentalTest(unittest.TestCase):
         with server.connect() as db:
             db.execute("INSERT INTO fundamentals VALUES('IBM','{\"original\":true}')")
             store.migrate(db)
-            self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0],2)
+            self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations WHERE version IN (1,2)').fetchone()[0],2)
             self.assertEqual(db.execute('SELECT payload FROM fundamentals').fetchone()[0],'{"original":true}')
         with sqlite3.connect(':memory:') as db:
             db.execute('CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT,applied_at TEXT)')

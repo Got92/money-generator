@@ -75,3 +75,11 @@ Le Dashboard affiche les secteurs sur la base des positions investies. Dans **An
 ### États financiers historiques
 
 Dans une fiche entreprise, chargez les états annuels ou trimestriels, actualisez-les et exportez le résultat JSON. La couverture affichée correspond aux périodes réellement obtenues auprès de Yahoo Finance ; les champs et dates de publication indisponibles restent inconnus. Les signes des flux sont conservés tels que fournis. Les données et leurs révisions sont persistées dans SQLite ; l'export JSON des portefeuilles ne sauvegarde pas ces historiques. Détails de l'API, de la migration et des limites : [PR 05 — historiques fondamentaux](docs/pr-05-fundamentals.md).
+
+## Recherche fondamentale et simulations — lots 06–13
+
+Les fiches entreprises regroupent les états annuels/trimestriels, les ratios et TTM, des graphiques 3/5/10 ans selon la couverture, un score explicable avec pondérations sauvegardées, les instantanés de multiples et les prix d’entrée indicatifs. Les scénarios Bear/Base/Bull sont modifiables et persistés ; reverse DCF, sensibilités et synthèse pondérée utilisent des hypothèses explicites. Les allocations cibles se règlent dans **Portefeuilles** ; **Simuler un renforcement** est disponible depuis une position ou une fiche entreprise et ne crée aucune transaction.
+
+L’historique de valorisation et celui du score commencent aux observations réellement collectées. Yahoo ne fournit pas systématiquement la disponibilité historique et la devise vérifiée nécessaires : les calculs concernés restent indisponibles. Les pairs sont limités aux entreprises consultées, avec secteur, méthode et pondérations comparables. Les estimations relatives restent saisies et sourcées par l’utilisateur. Les pondérations de synthèse sont propres à la session ; les pondérations du score, scénarios et cibles sont enregistrés dans SQLite. Les exports JSON du portefeuille n’incluent pas ces tables : une sauvegarde complète porte sur la base SQLite.
+
+Les migrations v3 à v6 sont additives. Le lancement sous WSL reste `npm start` depuis le dossier du dépôt, après création de `.venv` et installation de `requirements.txt` selon les commandes ci-dessus. Consultez [le bilan de validation](docs/phase-2-final-validation.md) et les documents `docs/pr-06-…` à `docs/pr-13-…` pour les méthodes et limites.
