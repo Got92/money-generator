@@ -88,4 +88,18 @@ class QualityTest(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations WHERE version=3').fetchone()[0],1)
             self.assertEqual(store.weights(),weights)
 
+    def test_allocation_uses_observed_buybacks_and_incremental_capital(self):
+        def metric(value,unit='currency'):
+            return {'value':value,'unit':unit,'currency':'EUR' if unit=='currency' else None,'source':'Synthetic'}
+        points=[{'periodEnd':'2023-12-31','metrics':{'diluted_average_shares':metric(100,'shares'),'invested_capital':metric(500),'ebit':metric(100),'tax_expense':metric(20),'pretax_income':metric(100)}},
+                {'periodEnd':'2024-12-31','metrics':{'diluted_average_shares':metric(97,'shares'),'buybacks':metric(-30),'invested_capital':metric(600),'ebit':metric(125),'tax_expense':metric(25),'pretax_income':metric(125)}}]
+        def indicators():
+            return {i['name']:i for d in q.score_company(points,sector_type='nonfinancial')['dimensions'] for i in d['indicators']}
+        self.assertAlmostEqual(indicators()['buyback_effectiveness']['value'],.03)
+        self.assertAlmostEqual(indicators()['reinvestment_efficiency']['value'],.2)
+        points[0]['metrics']['invested_capital']['currency']='USD'
+        self.assertIsNone(indicators()['reinvestment_efficiency']['value'])
+        del points[1]['metrics']['buybacks']
+        self.assertIsNone(indicators()['buyback_effectiveness']['value'])
+
 if __name__=='__main__': unittest.main()

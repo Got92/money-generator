@@ -1,8 +1,9 @@
 """Explainable quality scores. All inputs are PR06 ratio results, not prices."""
 import math
 import statistics
+from fundamental_metrics import _compatible, _span
 
-VERSION = 'quality-1.1'
+VERSION = 'quality-1.2'
 DEFAULT_WEIGHTS = {'profitability':25, 'growth':20, 'cash':20, 'strength':15, 'allocation':10, 'stability':10}
 LABELS = {'profitability':'Profitabilité', 'growth':'Croissance', 'cash':'Génération de cash', 'strength':'Solidité financière', 'allocation':'Allocation du capital', 'stability':'Stabilité'}
 # Bounds are explicit judgmental anchors; linear interpolation between them.
@@ -11,7 +12,7 @@ COMMON = {
  'growth': [('revenue_cagr_3y','Croissance du chiffre d’affaires sur 3 ans',0,.15),('eps_cagr_3y','Croissance du BPA sur 3 ans',0,.15)],
  'cash': [('fcf_margin','Marge de FCF',0,.20),('fcf_conversion','Conversion du résultat en FCF',0,1),('fcf_regularity','Régularité du FCF positif',0,1)],
  'strength': [('net_debt_ebitda','Dette nette / EBITDA',4,0),('interest_coverage','Couverture des intérêts',1,8),('liquidity','Liquidité courante',.5,2)],
- 'allocation': [('dilution_rate','Dilution',.05,-.03),('roic_trend','Évolution du ROIC',-.05,.05),('buyback_effectiveness','Efficacité des rachats',0,1),('reinvestment_efficiency','Efficacité du réinvestissement',0,1)],
+ 'allocation': [('dilution_rate','Dilution',.05,-.03),('roic_trend','Évolution du ROIC',-.05,.05),('buyback_effectiveness','Réduction nette des actions avec rachats',0,.03),('reinvestment_efficiency','Rendement incrémental du capital investi',0,.20)],
  'stability': [('margin_stability','Stabilité des marges',.15,0),('earnings_stability','Stabilité de la marge nette',.15,0)],
 }
 
@@ -29,12 +30,12 @@ def _rules(sector):
         # Leverage, operating FCF and margins are not comparable to industrials.
         rules['profitability']=[('roe','ROE',0,.15),('roa','ROA',0,.015)]
         rules['cash']=[]; rules['strength']=[]
-        rules['allocation']=[('dilution_rate','Dilution',.05,-.03),('buyback_effectiveness','Efficacité des rachats',0,1)]
+        rules['allocation']=[('dilution_rate','Dilution',.05,-.03),('buyback_effectiveness','Réduction nette des actions avec rachats',0,.03)]
     elif sector=='reit':
         # FFO/AFFO are unavailable in the current ratio contract; avoid proxying them with FCF.
         rules['profitability']=[('roe','ROE',0,.12),('roa','ROA',0,.06)]
         rules['cash']=[]; rules['strength']=[]
-        rules['allocation']=[('dilution_rate','Dilution',.05,-.03),('buyback_effectiveness','Efficacité des rachats',0,1)]
+        rules['allocation']=[('dilution_rate','Dilution',.05,-.03),('buyback_effectiveness','Réduction nette des actions avec rachats',0,.03)]
     return rules
 
 def score_company(points_or_metrics, weights=None, sector_type='unknown'):
@@ -66,6 +67,29 @@ def score_company(points_or_metrics, weights=None, sector_type='unknown'):
     if len(roics)>=2 and all(x.get('quality')!='currency_unverified' for x in roics):
         ratios['roic_trend']={'value':roics[-1]['value']-roics[0]['value'],'unit':'fraction','definition':'Variation du ROIC entre les premières et dernières observations sur quatre périodes au maximum.','inputs':roics,'source':list(dict.fromkeys(src for x in roics for src in x.get('source',[])))}
     m=points[-1].get('metrics',{}) if points else {}
+    # Descriptive allocation measures, requiring consecutive annual observations.
+    # Neither measure claims causation or the attractiveness of a repurchase price.
+    previous=points[-2].get('metrics',{}) if len(points)>1 else {}
+    consecutive=False
+    if len(points)>1:
+        try: consecutive=_span(points[-2]['periodEnd'],points[-1]['periodEnd'],1)
+        except (KeyError,TypeError,ValueError): pass
+    def add_measure(name,value,inputs,definition):
+        ratios[name]={'value':value,'unit':'fraction','inputs':inputs,'definition':definition,
+                      'source':list(dict.fromkeys(x.get('source') for x in inputs if x.get('source')))}
+    shares=[previous.get('diluted_average_shares'),m.get('diluted_average_shares')]
+    buybacks=m.get('buybacks')
+    if consecutive and _compatible(shares,'shares') and shares[0]['value']>0 and buybacks and _compatible([buybacks]) and abs(buybacks['value'])>0:
+        add_measure('buyback_effectiveness',max(0,1-shares[1]['value']/shares[0]['value']),shares+[buybacks],
+                    'max(0, 1 − actions diluées moyennes / actions de l’année précédente), avec rachats déclarés non nuls. Mesure nette incluant émissions et rémunérations en actions ; ne mesure pas le prix payé.')
+    capital=[previous.get('invested_capital'),m.get('invested_capital')]
+    flows=[r.get(k) for r in (previous,m) for k in ('ebit','tax_expense','pretax_income')]
+    if consecutive and _compatible(capital+flows,historical=True) and capital[1]['value']>capital[0]['value']:
+        old_ebit,old_tax,old_pre,new_ebit,new_tax,new_pre=[r['value'] for r in flows]
+        if old_pre>0 and new_pre>0 and 0<=old_tax/old_pre<=1 and 0<=new_tax/new_pre<=1:
+            value=(new_ebit*(1-new_tax/new_pre)-old_ebit*(1-old_tax/old_pre))/(capital[1]['value']-capital[0]['value'])
+            add_measure('reinvestment_efficiency',value,capital+flows,
+                        'Variation annuelle du NOPAT / variation positive du capital investi ; NOPAT = EBIT × (1 − charge fiscale / résultat avant impôts). Indicateur descriptif, sensible aux acquisitions et décalages temporels.')
     a,b=m.get('current_assets') or {},m.get('current_liabilities') or {}
     if all(isinstance(x.get('value'),(int,float)) and not isinstance(x.get('value'),bool) and math.isfinite(x['value']) for x in (a,b)) and b['value']>0 and a.get('unit')=='currency' and b.get('unit')=='currency' and a.get('currency') and a.get('currency')==b.get('currency'):
         ratios['liquidity']={'value':a['value']/b['value'],'unit':'multiple','definition':'Actifs courants / passifs courants à la même clôture.','inputs':[a,b],'source':list(dict.fromkeys(x.get('source') for x in (a,b) if x.get('source')))}
