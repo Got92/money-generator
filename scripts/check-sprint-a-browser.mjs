@@ -16,9 +16,9 @@ try{
  browser=await chromium.launch({executablePath:process.env.ATLAS_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(url);await page.locator('.nav[data-page="Portefeuilles"]').click();
- await page.locator('#addTx').click();await page.locator('#modal [name=type]').selectOption('split');
- await page.locator('#modal [name=date]').fill('2030-01-01');await page.locator('#modal [name=ticker]').fill('SYNTHCO');await page.locator('#modal [name=ratio]').fill('2');await page.locator('#modal [name=note]').fill('Split 2:1');
- await page.locator('#modal button[value=save]').click();await page.locator('#modal').waitFor({state:'hidden'});
+ await page.locator('#addTx').click();await page.locator('#modal [data-kind=dividend]').click();await page.locator('#modal [name=type]').selectOption('split');await page.locator('.instrument-suggestion').filter({hasText:'SYNTHCO'}).click();
+ await page.locator('#modal [name=date]').fill('2030-01-01');await page.locator('#modal [name=ratio]').fill('2');await page.locator('#modal [name=note]').fill('Split 2:1');
+ await page.locator('#reviewTransaction').click();await page.locator('#confirmTransaction').click();await page.locator('#modal').waitFor({state:'hidden'});
  assert.ok(await page.getByText('Split / regroupement').count());
  await page.locator('[data-page="Settings"]').click();const [download]=await Promise.all([page.waitForEvent('download'),page.getByText('Exporter la base SQLite complète').click()]);
  const file=path.join(dir,'export.sqlite3');await download.saveAs(file);

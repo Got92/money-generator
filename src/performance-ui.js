@@ -16,6 +16,7 @@ export function wirePerformance({data,selected,onRatesLoaded=()=>{}}){
  async function draw(){const turn=++generation;try{
   if(selected==='demo'){panel.innerHTML='Les cours fictifs du portefeuille démo n’ont pas d’historique.';return}
   if(!tx.length){panel.innerHTML='Ajoutez des transactions pour afficher la performance.';return}
+  if(tx.some(t=>t.type==='opening')){panel.className='chart-empty';panel.textContent='Historique incomplet : suivi à partir d’une position initiale. Performance historique et XIRR depuis l’origine indisponibles.';status.textContent='';return}
   if(period==='1D'){await drawIntraday(turn);return}
   if(tx.some(t=>['split','adjustment'].includes(t.type))){panel.className='chart-empty';panel.textContent='Performance historique indisponible : les cours fournisseurs peuvent être ajustés pour les splits et les corrections de quantité ne représentent pas nécessairement un rendement. Vérifiez les cours et le relevé du courtier.';status.textContent='';return}
   panel.className='chart-empty';panel.textContent='Chargement de la période…';
@@ -79,7 +80,7 @@ export function wirePerformance({data,selected,onRatesLoaded=()=>{}}){
  document.querySelector('#refreshHistory').onclick=async e=>{
   const button=e.currentTarget;button.disabled=true;
   try{
-   if(period==='1D'){await draw();return}
+   if(tx.some(t=>t.type==='opening')||period==='1D'){await draw();return}
    status.textContent='Actualisation des historiques…';
    const symbols=[...new Set([...tickers,...(benchmark==='none'?[]:[benchmark])])];
    if(!symbols.length)throw Error('Aucun titre à actualiser.');

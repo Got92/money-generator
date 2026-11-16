@@ -170,7 +170,13 @@ def valid(data):
             if not re.fullmatch(r'[A-Z]{3}',currency): raise ValueError()
             kind=t['type']
             if kind not in ('buy','sell') and (t.get('settlementCurrency') or t.get('settlementAmount') or t.get('settlementFee')): raise ValueError('Le règlement réel concerne uniquement les achats et ventes.')
-            if kind in ('buy','sell'):
+            if kind=='opening':
+                ticker=t.get('ticker'); q=float(t['quantity']); price=float(t['price'])
+                if not isinstance(ticker,str) or not ticker.strip() or not all(math.isfinite(x) and x>0 for x in (q,price)) or float(t.get('fee') or 0)!=0: raise ValueError('Position initiale invalide.')
+                key=(t['portfolioId'],ticker)
+                if key in positions or any(x['portfolioId']==t['portfolioId'] and x.get('ticker')==ticker and x['date']<t['date'] for x in data['transactions']): raise ValueError('La position initiale doit précéder tout historique connu du titre.')
+                positions[key]=q
+            elif kind in ('buy','sell'):
                 ticker=t.get('ticker'); q=float(t['quantity']); price=float(t['price']); fee=float(t.get('fee') or 0)
                 if not isinstance(ticker,str) or not ticker.strip() or not all(math.isfinite(x) for x in (q,price,fee)) or q<=0 or price<=0 or fee<0: raise ValueError()
                 if t.get('settlementCurrency') or t.get('settlementAmount') or t.get('settlementFee'):
@@ -242,7 +248,7 @@ class Handler(SimpleHTTPRequestHandler):
                 row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
                 if not row: return self.respond(200,{'data':[]})
                 data=read_data(db,row[0]); real={p['id'] for p in data['portfolios'] if p['id']!='demo'}
-                symbols=set(data['watchlist']) | {t['ticker'] for t in data['transactions'] if t.get('portfolioId') in real and t.get('type') in ('buy','sell','split','adjustment') and t.get('ticker')}
+                symbols=set(data['watchlist']) | {t['ticker'] for t in data['transactions'] if t.get('portfolioId') in real and t.get('type') in ('buy','sell','opening','split','adjustment') and t.get('ticker')}
                 result=coverage_store.summary(db,symbols,data.get('marketData') or {})
             return self.respond(200,{'data':result,'criteria':'10 périodes annuelles avec tous les indicateurs, dates et devises vérifiées, et cours récent.'})
         if path=='/api/fundamentals/ratios':
@@ -340,7 +346,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond(200,result)
             except ValueError as e: return self.respond(400,{'error':str(e)})
         if path.startswith('/api/'): return self.respond(404,{'error':'Introuvable'})
-        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js','/src/quality-ui.js','/src/historical-valuation-ui.js','/src/scenario-model.js','/src/scenario-ui.js','/src/advanced-valuation.js','/src/advanced-valuation-ui.js','/src/target-allocation.js','/src/target-allocation-ui.js','/src/reinforcement.js','/src/reinforcement-ui.js','/src/reconciliation.js','/src/reconciliation-ui.js','/src/broker-csv.js','/src/import-workflow.js','/src/import-ui.js','/src/coverage-ui.js','/src/instrument-ui.js','/src/trading212.js','/src/auto-sync.js','/src/quote-freshness.js','/src/calendar.js'): return self.send_error(404)
+        if path not in ('/','/index.html','/style.css','/src/app.js','/src/transaction-ui.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js','/src/quality-ui.js','/src/historical-valuation-ui.js','/src/scenario-model.js','/src/scenario-ui.js','/src/advanced-valuation.js','/src/advanced-valuation-ui.js','/src/target-allocation.js','/src/target-allocation-ui.js','/src/reinforcement.js','/src/reinforcement-ui.js','/src/reconciliation.js','/src/reconciliation-ui.js','/src/broker-csv.js','/src/import-workflow.js','/src/import-ui.js','/src/coverage-ui.js','/src/instrument-ui.js','/src/trading212.js','/src/auto-sync.js','/src/quote-freshness.js','/src/calendar.js'): return self.send_error(404)
         super().do_GET()
     @guarded_request
     def do_PUT(self):
@@ -412,7 +418,7 @@ class Handler(SimpleHTTPRequestHandler):
                 data=read_data(db,row[1])
             def symbols_for(d):
                 real={p['id'] for p in d['portfolios'] if p['id']!='demo'}
-                return set(d['watchlist']) | {t.get('ticker') for t in d['transactions'] if t['portfolioId'] in real and t['type'] in ('buy','sell','split','adjustment') and t.get('ticker')}
+                return set(d['watchlist']) | {t.get('ticker') for t in d['transactions'] if t['portfolioId'] in real and t['type'] in ('buy','sell','opening','split','adjustment') and t.get('ticker')}
             symbols=sorted(symbols_for(data)); failures={}; updates={}
             if len(symbols)>200: raise ValueError('Synchronisation limitée à 200 symboles.')
             for symbol in symbols:

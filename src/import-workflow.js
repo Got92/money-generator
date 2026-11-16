@@ -14,7 +14,7 @@ export function prepareImport({rows,mapping,portfolioId,existing=[],symbols={},c
   const row=rows[i];if(row.every(x=>!String(x).trim()))continue;
   try{
    const t={id:idFactory(),portfolioId};for(const key of IMPORT_FIELDS)t[key]=get(row,key);
-   t.type=TYPES[normal(t.type)]||t.type.toLowerCase();t.ticker=t.ticker.toUpperCase();const original=t.ticker;if(original)originalSymbols.add(original);if(original&&Object.hasOwn(symbols,original)){if(!symbols[original]?.trim())throw Error('Symbole Atlas requis pour '+original+'.');t.ticker=symbols[original].trim().toUpperCase()}
+   t.type=TYPES[normal(t.type)]||t.type.toLowerCase();t.ticker=t.ticker.toUpperCase();const original=t.ticker;if(original)t.sourceTicker=original;if(original)originalSymbols.add(original);if(original&&Object.hasOwn(symbols,original)){if(!symbols[original]?.trim())throw Error('Symbole Atlas requis pour '+original+'.');t.ticker=symbols[original].trim().toUpperCase()}
    t.currency=(t.currency||'EUR').toUpperCase();t.targetCurrency=t.targetCurrency.toUpperCase();t.settlementCurrency=t.settlementCurrency.toUpperCase();t.sourceIsin=t.sourceIsin.toUpperCase();if(t.sourceIsin&&(!t.ticker||!validIsin(t.sourceIsin)))throw Error('ISIN courtier invalide ou symbole manquant.');if(t.brokerRef&&[...existing,...pending].some(x=>x.portfolioId===portfolioId&&x.brokerRef===t.brokerRef))throw Error('Identifiant courtier déjà importé : '+t.brokerRef+'.');if(t.type==='exchange'&&cashMode!=='multi')throw Error('Le change exige des soldes par devise.');
    for(const key of ['quantity','price','fee','amount','targetAmount','ratio','quantityDelta','settlementAmount','settlementFee'])if(t[key]){const raw=t[key].replace(',','.');if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)||!Number.isFinite(Number(raw)))throw Error('Nombre invalide pour '+key+'.');t[key]=Number(raw)}
    const keys=['portfolioId','date','type','ticker','quantity','price','fee','amount','currency','targetCurrency','targetAmount','ratio','quantityDelta','note','settlementCurrency','settlementAmount','settlementFee'];
@@ -25,4 +25,22 @@ export function prepareImport({rows,mapping,portfolioId,existing=[],symbols={},c
  }
  if(!pending.length)throw Error('Aucune ligne à importer.');
  validateTransactions([...existing,...pending]);return {transactions:pending,symbols:[...originalSymbols].sort()};
+}
+
+// Only reuse a previously confirmed broker mapping with the same source identity.
+// A shared ISIN alone does not establish a listing (exchange/currency may differ).
+export function reusableImportSymbols({rows,mapping,existing=[],registry=[],portfolioId}){
+ const get=(row,key)=>mapping[key]>=0?String(row[mapping[key]]||'').trim().toUpperCase():'';
+ const result={};
+ for(const source of new Set(rows.map(r=>get(r,'ticker')).filter(Boolean))){
+  const group=rows.filter(r=>get(r,'ticker')===source);
+  const isins=new Set(group.map(r=>get(r,'sourceIsin'))),currencies=new Set(group.map(r=>get(r,'currency')));
+  if(isins.size!==1||currencies.size!==1||!group.every(r=>get(r,'brokerRef').startsWith('TRADING212:')))continue;
+  const matches=existing.filter(t=>t.portfolioId===portfolioId&&t.brokerRef?.startsWith('trading212:')&&t.sourceTicker===source&&String(t.sourceIsin||'')===[...isins][0]&&t.currency===[...currencies][0]);
+  const targets=new Set(matches.map(t=>t.ticker));if(targets.size!==1)continue;
+  const target=[...targets][0],item=registry.find(x=>x.ticker===target);
+  if(!item||matches.some(t=>t.instrumentId!==item.id)||(item.isin&&[...isins][0]&&item.isin!==[...isins][0])||(item.currency&&item.currency!==[...currencies][0]))continue;
+  result[source]=target;
+ }
+ return result;
 }
