@@ -11,11 +11,11 @@ class ProviderTest(unittest.TestCase):
     def test_company_maps_currency_dates_and_yield(self):
         info={'symbol':'AI.PA','longName':'Air Liquide','currency':'EUR','financialCurrency':'USD',
               'regularMarketPrice':123.45,'regularMarketTime':1762963200,'exchangeTimezoneName':'Europe/Paris',
-              'totalRevenue':1200,'trailingPE':None,'dividendYield':2.5}
+              'totalRevenue':1200,'trailingPE':None,'dividendYield':2.5,'quoteType':'ETF'}
         with patch.object(market.yf,'Ticker') as ticker:
             ticker.return_value.get_info.return_value=info
             result=market.company('ai.pa')
-        self.assertEqual(result['currency'],'EUR');self.assertEqual(result['financialCurrency'],'USD')
+        self.assertEqual(result['currency'],'EUR');self.assertEqual(result['financialCurrency'],'USD');self.assertEqual(result['assetClass'],'ETF')
         self.assertEqual(result['price'],123.45);self.assertIsNotNone(result['priceDate'])
         self.assertEqual(result['metrics']['revenue'],1200);self.assertIsNone(result['metrics']['pe'])
         self.assertEqual(result['metrics']['dividendYield'],.025);self.assertEqual(result['source'],'Yahoo Finance (yfinance)')
@@ -23,7 +23,7 @@ class ProviderTest(unittest.TestCase):
         with patch.object(market.yf,'Ticker') as ticker:
             ticker.return_value.get_info.return_value={'symbol':'AI.PA','currency':'EUR','regularMarketPrice':123.45}
             result=market.company('AI.PA')
-            self.assertIsNone(result['price']);self.assertTrue(result['warnings'])
+            self.assertIsNone(result['price']);self.assertIsNone(result['assetClass']);self.assertTrue(result['warnings'])
             ticker.return_value.get_info.return_value={'symbol':'OTHER','regularMarketPrice':10}
             with self.assertRaises(market.MarketError):market.company('AI.PA')
     def test_invalid_input_and_provider_error(self):

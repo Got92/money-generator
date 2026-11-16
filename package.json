@@ -5,7 +5,8 @@
   "scripts": {
     "start": ".venv/bin/python server.py",
     "test": "node --test",
-    "test:browser": "node scripts/check-history-browser.mjs"
+    "test:browser": "node scripts/check-history-browser.mjs && node scripts/check-allocation-browser.mjs && npm run test:fundamentals-browser",
+    "test:fundamentals-browser": "node scripts/check-fundamentals-browser.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.65.1"

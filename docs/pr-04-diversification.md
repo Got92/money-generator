@@ -1,0 +1,16 @@
+# PR 04 — Diversification et bilan P0
+
+Le module pur `calculateAllocation(positions, cashEntries, field, basis)` calcule les valeurs et poids en EUR par catégorie ; `basis` vaut `invested` (par défaut) ou `total`. Il retourne `status`, `denominator` et `groups` (catégorie nullable, indicateur de liquidités, valeur signée et poids). Un cours ou change requis absent renvoie `missing`, et une base nulle ou négative `nonpositive` : aucun pourcentage n'est inventé. La base investie ne dépend pas de la disponibilité du cash. Le cash est converti par devise pour les comptes multidevises, les comptes convertis ayant un solde EUR. Les frais et flux restent calculés par `finance.js` ; aucune transaction n'est modifiée. En présence d'un découvert, les poids sont signés et peuvent dépasser 100 % ; les barres ne sont montrées que pour les poids entre 0 et 100 %.
+
+Dashboard conserve son allocation sectorielle investie. Analytics, extrait dans `src/analytics.js`, propose secteur, industrie, devise de cotation, pays du profil et classe d'actifs avec sélection de base. Les données manquantes sont identifiées. Le type d'instrument Yahoo (`quoteType`) est enregistré comme `assetClass` nullable dans le profil existant ; aucune migration ni estimation des anciens profils. La devise de cotation et le pays du profil ne sont pas des expositions économiques ; aucune transparence de fonds n'est effectuée.
+
+Validation : tests unitaires des bases, valeurs manquantes, zéro, cash négatif, frais et taux ; fixture navigateur synthétique isolée pour Dashboard, Analytics, changement de base, données manquantes et absence d'écriture. Les suites complètes Node, Python et navigateur servent au bilan P0 combiné après intégration de PR 03.
+
+## Provenance et validation de livraison
+
+La section « Base et sources » détaille le dénominateur EUR et la méthode, les cours par position avec date, source et date de récupération, ainsi que les observations de change effectivement utilisées (date, source et récupération). Les soldes multidevises utilisent le taux à la date du calcul ; pour le cash converti, les taux suivent les dates des transactions. Les métadonnées absentes restent inconnues et un taux absent reste indisponible. Les données de démonstration sont identifiées comme fictives. Les profils historiques ne possèdent pas forcément ces champs ; aucune date n'est déduite de la date courante pour combler une absence.
+
+Fichiers concernés : `allocation.js` et `allocation-provenance.js` (calculs et observations), `analytics.js` et `app.js` (affichage et interaction), `finance.js` (sélection commune de l'observation FX), `market.py` (type Yahoo nullable), `server.py` (modules statiques), README et tests. Vérification locale avant intégration : 67 tests Node et 30 tests Python ; navigateur Chromium sur fixture isolée, parcours historique et diversification, bascule des bases et contrôle de l'absence d'écriture. Les tests de provenance couvrent dates et sources fournies et absentes, industrie, pays, ETF et catégorie inconnue ; les suites combinées restent à rejouer après PR 03.
+
+
+Après intégration de PR 03 : **73 tests JS, 30 tests Python et les deux parcours Chromium réussis**. Voir [bilan P0 combiné](p0-validation.md). Aucune migration SQLite n'est requise par PR 04.

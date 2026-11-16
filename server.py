@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 import market
 import history_store
+import fundamental_store
 
 ROOT = Path(__file__).resolve().parent
 DB = Path(os.environ.get('ATLAS_DB', Path.home() / '.atlas-investment' / 'atlas.sqlite3')).expanduser()
@@ -25,6 +26,7 @@ def connect():
     db.execute('CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
     with db:
         history_store.migrate(db)
+        fundamental_store.migrate(db)
         if not db.execute("SELECT 1 FROM schema_meta WHERE key='normalized_v1'").fetchone():
             row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
             if row: write_collections(db,json.loads(row[0]))
@@ -98,6 +100,7 @@ def valid(data):
     if not isinstance(data.get('marketData',{}),dict): raise ValueError('Données de marché invalides.')
 
 history_cache = history_store.HistoryCache(connect)
+fundamental_history = fundamental_store.FundamentalStore(connect)
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw): super().__init__(*a,directory=str(ROOT),**kw)
@@ -110,6 +113,10 @@ class Handler(SimpleHTTPRequestHandler):
                 row=db.execute('SELECT revision,payload FROM state WHERE id=1').fetchone()
                 result={'revision':row[0], 'data':read_data(db,row[1])} if row else {'revision':0,'data':None}
             return self.respond(200,result)
+        if path=='/api/fundamentals/history':
+            params=parse_qs(urlsplit(self.path).query)
+            try: return self.respond(200,fundamental_history.get(params.get('symbol',[''])[0],params.get('period',['annual'])[0],params.get('refresh',['0'])[0]=='1',params.get('asOf',[None])[0]))
+            except ValueError as e: return self.respond(400,{'error':str(e)})
         if path=='/api/market/history':
             params=parse_qs(urlsplit(self.path).query)
             try: return self.respond(200,history_cache.prices(params.get('symbol',[''])[0],params.get('refresh',['0'])[0]=='1',params.get('full',['0'])[0]=='1'))
@@ -131,7 +138,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond(200,{'data':result})
             except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path.startswith('/api/'): return self.respond(404,{'error':'Introuvable'})
-        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js'): return self.send_error(404)
+        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js'): return self.send_error(404)
         super().do_GET()
     def do_PUT(self):
         if self.path!='/api/state': return self.respond(404,{'error':'Introuvable'})
