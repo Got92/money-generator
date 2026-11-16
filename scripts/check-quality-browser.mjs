@@ -12,7 +12,7 @@ let browser;
 try {
  const lines=createInterface({input:server.stdout});const [port]=await once(lines,'line');const url=`http://127.0.0.1:${port}`;
  browser=await chromium.launch({headless:true,executablePath:process.env.ATLAS_CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox']});const page=await browser.newPage();
- await page.goto(url);const initial=await (await page.request.get(url+'/api/state')).json();
+ await page.goto(url);await page.locator('.nav[data-page="Watchlist"]').waitFor();const initial=await (await page.request.get(url+'/api/state')).json();
  const fixture={portfolios:[{id:'test',name:'Synthétique',currency:'EUR'}],transactions:[],watchlist:['SYNTH'],marketData:{SYNTH:{name:'Fixture synthétique',symbol:'SYNTH',source:'Fixture',fetchedAt:'2024-12-31',sector:'Technology',metrics:{}}}};
  assert.equal((await page.request.put(url+'/api/state',{data:{revision:initial.revision,data:fixture}})).status(),200);
  await page.reload();await page.locator('[data-page="Watchlist"]').click();await page.locator('[data-company="SYNTH"]').click();await page.locator('#loadQuality').click();

@@ -42,7 +42,7 @@ try {
  await page.locator('#scenarioForm').waitFor();await page.selectOption('#scenarioName','Base');assert.equal(await page.locator('#scenarioForm [name="shares"]').inputValue(),'100');
  const f=page.locator('#advancedValuation');
  for(const [k,v] of Object.entries({currency:'EUR',fcf:'150',price:'20',growth:'10',discount:'10',terminal:'2',shares:'100'}))await f.locator(`[name="${k}"]`).fill(v);
- await f.locator('[name="dcfSource"]').selectOption('Base');await f.locator('button[type="submit"]').click();
+ await f.locator('#advancedLoadHistorical').click();await f.locator('#advancedHistoricalStatus').getByText(/Estimation chargée/).waitFor();assert.equal(await f.locator('[name="historicalValue"]').inputValue(),'20');await f.locator('[name="dcfSource"]').selectOption('Base');await f.locator('button[type="submit"]').click();
  assert.match(await f.locator('#advancedResult').innerText(),/Scénario sauvegardé Base/);
  await page.locator('[data-reinforcement="SYNTHCO"]').click();await page.locator('#reinforcementForm [name="size"]').fill('110');await page.locator('#reinforcementForm [name="fee"]').fill('10');await page.locator('#reinforcementForm button.primary').click();
  await page.locator('#reinforcementResult').getByText(/Cible enregistrée/).waitFor();
