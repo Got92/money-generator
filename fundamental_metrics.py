@@ -47,23 +47,34 @@ def _span(a,b,years):
     return abs(days-years*365.2425)<=min(45, 15*years)
 
 
-def _compatible(items, unit='currency'):
+def _unverified_currency(item):
+    if not item: return False
+    currency=(item.get('provenance') or {}).get('currency') or {}
+    return ('unverified' in str(currency.get('quality','')).lower()
+            or any(_unverified_currency(child) for child in (item.get('inputs') or [])))
+
+
+def _compatible(items, unit='currency', historical=False):
     if not items or any(x is None for x in items): return False
     if any(x.get('unit') != unit for x in items): return False
-    return unit == 'shares' or (all(x.get('currency') for x in items) and len({x['currency'] for x in items}) == 1)
+    if unit == 'shares': return True
+    if not all(x.get('currency') for x in items) or len({x['currency'] for x in items}) != 1: return False
+    return not historical or not any(_unverified_currency(x) for x in items)
 
 
 def _provenance(items):
-    return [dict(metric=x.get('metric'), periodEnd=x.get('periodEnd'), id=x.get('id'), source=x.get('source'), fetchedAt=x.get('fetchedAt'), provenance=x.get('provenance'), inputs=x.get('inputs')) for x in items if x]
+    keys=('metric','periodEnd','id','value','unit','currency','source','fetchedAt','publishedAt','availableAt','status','provenance','inputs')
+    return [{k:x.get(k) for k in keys} for x in items if x]
 
 
 def _result(name,end,items,value=None,reason=None):
     definition, formula, unit=DEFINITIONS[name]
     if value is not None and not math.isfinite(value): value,reason=None,'Résultat non fini.'
+    quality=('unavailable' if value is None else 'currency_unverified' if any(_unverified_currency(x) for x in items if x)
+             else 'derived' if all(x.get('status') == 'reported' for x in items if x) else 'derived_from_derived')
     return {'value':value,'unit':unit,'definition':definition,'formula':formula,'periodEnd':end,
             'source':list(dict.fromkeys(x.get('source') for x in items if x and x.get('source'))),
-            'quality':'unavailable' if value is None else ('derived' if all(x.get('status') == 'reported' for x in items if x) else 'derived_from_derived'),
-            'reason':reason,'inputs':_provenance(items)}
+            'quality':quality,'reason':reason,'inputs':_provenance(items)}
 
 
 def _ttm(groups, ends):
@@ -77,7 +88,7 @@ def _ttm(groups, ends):
                 for metric in FLOWS:
                     rows=[groups[d].get(metric) for d in window]
                     unit='shares' if metric=='diluted_average_shares' else ('currency/share' if metric=='diluted_eps' else 'currency')
-                    if not _compatible(rows,unit): continue
+                    if not _compatible(rows,unit,historical=True): continue
                     # Weighted-average quarterly shares are not a full-year weighted average
                     # unless actual quarter lengths are known. Do not approximate them.
                     if metric=='diluted_average_shares': continue
@@ -133,7 +144,7 @@ def calculate_fundamentals(observations, period='annual', profile=None):
             rows=[metrics.get(n) for n in names]+[metrics.get(balance),groups[prev].get(balance) if prev else None]
             reason=None; val=None
             if name=='roic' and not industrial: reason='ROIC industriel non adapté ou secteur inconnu.'
-            elif not _compatible(rows): reason='Flux ou bilans moyens comparables indisponibles.'
+            elif not _compatible(rows,historical=True): reason='Flux ou bilans moyens comparables indisponibles, ou devise historique non vérifiée.'
             else:
                 try:
                     values=[r['value'] for r in rows]; avg=(values[-1]+values[-2])/2
@@ -157,20 +168,22 @@ def calculate_fundamentals(observations, period='annual', profile=None):
                 name=f'{metric}_cagr_{years}y'
                 start=next((d for d in reversed(ends[:idx]) if _span(d,end,years)),None)
                 rows=[metrics.get(actual),groups[start].get(actual) if start else None]
-                val=None; reason='Durée complète ou observations comparables indisponibles.'
+                val=None; reason='Durée complète, observations comparables ou devise historique vérifiée indisponibles.'
                 # A matching same-period observation must exist in every intervening year.
                 intermediate=[next((groups[d].get(actual) for d in reversed(ends[:idx]) if _span(d,end,y) and groups[d].get(actual)),None) for y in range(1,years+1)]
-                covered=start and _compatible([rows[0]]+intermediate,unit)
+                covered=start and _compatible([rows[0]]+intermediate,unit,historical=True)
                 if covered and _compatible(rows,unit):
                     if rows[0]['value']>0 and rows[1]['value']>0:
                         elapsed=(_date(end)-_date(start)).days/365.2425
                         val=(rows[0]['value']/rows[1]['value'])**(1/elapsed)-1; reason=None
                     else: reason='CAGR indisponible pour une base ou une valeur finale non positive.'
-                ratios[name]=_result(name,end,rows,val,reason)
+                ratios[name]=_result(name,end,[rows[0]]+intermediate,val,reason)
         fcf=metrics.get('free_cash_flow'); cap=(profile or {}).get('metrics',{}).get('marketCap') if isinstance((profile or {}).get('metrics',{}),dict) else None
         curr=(profile or {}).get('currency'); rows=[fcf]
+        price_date=(profile or {}).get('priceDate'); snapshot_source=(profile or {}).get('source')
+        valid_source=isinstance(snapshot_source,str) and bool(snapshot_source.strip())
         val=None; reason='Capitalisation actuelle ou FCF annuel comparable indisponible.'
-        if industrial and idx==len(ends)-1 and period in ('annual','ttm') and _compatible(rows) and curr==fcf.get('currency') and isinstance(cap,(int,float)) and not isinstance(cap,bool) and math.isfinite(cap) and cap>0:
+        if industrial and idx==len(ends)-1 and period in ('annual','ttm') and _compatible(rows,historical=True) and curr==fcf.get('currency') and _date(price_date) and price_date>=end and valid_source and isinstance(cap,(int,float)) and not isinstance(cap,bool) and math.isfinite(cap) and cap>0:
             val=fcf['value']/cap; reason=None
             rows.append({'metric':'current_market_cap','periodEnd':(profile or {}).get('priceDate'), 'value':cap,'unit':'currency','currency':curr,'source':(profile or {}).get('source'),'fetchedAt':(profile or {}).get('fetchedAt'),'status':'reported'})
         ratios['fcf_yield']=_result('fcf_yield',end,rows,val,reason)
@@ -181,5 +194,6 @@ def calculate_fundamentals(observations, period='annual', profile=None):
               'notes':['Bilans moyens sur la période correspondante ; les taux trimestriels ne sont pas annualisés.',
                        'TTM : somme de quatre trimestres consécutifs ; bilans à la clôture, jamais additionnés.',
                        'CAGR : durée réelle et observations annuelles intermédiaires ; valeurs positives requises.',
-                       'Capitalisation actuelle utilisée uniquement pour le dernier FCF annuel ou TTM ; aucune valorisation historique.',
-                       'Les secteurs financiers et immobiliers ne reçoivent pas les ratios industriels non adaptés.']}}
+                       'Capitalisation du dernier snapshot enregistré utilisée uniquement pour le dernier FCF annuel ou TTM ; la date du cours est fournie et le snapshot peut être ancien ; aucune valorisation historique.',
+                       'Les secteurs financiers et immobiliers ne reçoivent pas les ratios industriels non adaptés.',
+                       'La devise historique Yahoo peut provenir de métadonnées actuelles non vérifiées : les calculs entre périodes sont alors indisponibles ; les ratios de même période sont signalés currency_unverified.']}}
