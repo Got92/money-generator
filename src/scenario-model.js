@@ -1,3 +1,4 @@
+import {dcf} from './valuation.js';
 // Simulations only: all financial inputs are supplied by the user, in consistent units.
 export function projectScenario(s){
  const finite=x=>typeof x==='number'&&Number.isFinite(x);
@@ -21,7 +22,7 @@ export function evaluateScenario(s,currentPrice=null){
  const projections=projectScenario(s), flows=projections.map(p=>p.flow), r=s.discount,g=s.terminalGrowth;
  // At each future date, explicitly discount the following five flows and a terminal value.
  const flowAt=year=>year<=5?flows[year-1]:flows[4]*(1+s.postYear5Growth)**(year-5);
- const valueAt=t=>{const future=Array.from({length:5},(_,i)=>flowAt(t+i+1));const terminal=future[4]*(1+g)/(r-g);const enterprise=future.reduce((a,v,i)=>a+v/(1+r)**(i+1),0)+terminal/(1+r)**5;return {value:(enterprise-(s.method==='FCFF'?s.netDebt:0))/s.shares,terminal}};
+ const valueAt=t=>{const future=Array.from({length:5},(_,i)=>flowAt(t+i+1));const terminal=future[4]*(1+g)/(r-g);return {value:dcf({method:s.method,projections:future,discount:r,terminal:g,netDebt:s.netDebt,shares:s.shares}),terminal}};
  const now=valueAt(0),one=valueAt(1),five=valueAt(5);
  if(![now.value,one.value,five.value,now.terminal].every(Number.isFinite))throw Error('Résultat non calculable.');
  const usable=typeof currentPrice==='number'&&Number.isFinite(currentPrice)&&currentPrice>0;
