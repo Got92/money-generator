@@ -1,3 +1,4 @@
+import valuation_history
 """Local-only API and static server for Atlas. SQLite is kept outside the web root."""
 import json, os, sqlite3, threading, datetime, math, re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -31,6 +32,7 @@ def connect():
         history_store.migrate(db)
         fundamental_store.migrate(db)
         quality_store.migrate(db)
+        valuation_history.migrate(db)
         if not db.execute("SELECT 1 FROM schema_meta WHERE key='normalized_v1'").fetchone():
             row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
             if row: write_collections(db,json.loads(row[0]))
@@ -106,6 +108,8 @@ def valid(data):
 history_cache = history_store.HistoryCache(connect)
 fundamental_history = fundamental_store.FundamentalStore(connect)
 quality_config = quality_store.QualityStore(connect)
+
+valuation_history_store = valuation_history.ValuationStore(connect)
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self,*a,**kw): super().__init__(*a,directory=str(ROOT),**kw)
@@ -189,10 +193,15 @@ class Handler(SimpleHTTPRequestHandler):
             params=parse_qs(urlsplit(self.path).query)
             try:
                 result=market.search(params.get('q',[''])[0]) if path.endswith('/search') else market.company(params.get('symbol',[''])[0])
+                if path.endswith('/company'): valuation_history_store.record(result)
                 return self.respond(200,{'data':result})
             except market.MarketError as e: return self.respond(503,{'error':str(e)})
+        if path=='/api/valuation/history':
+            params=parse_qs(urlsplit(self.path).query)
+            try: return self.respond(200,valuation_history_store.get(params.get('symbol',[''])[0],params.get('asOf',[None])[0]))
+            except ValueError as e: return self.respond(400,{'error':str(e)})
         if path.startswith('/api/'): return self.respond(404,{'error':'Introuvable'})
-        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js','/src/quality-ui.js'): return self.send_error(404)
+        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js','/src/quality-ui.js','/src/historical-valuation-ui.js'): return self.send_error(404)
         super().do_GET()
     def do_PUT(self):
         if self.headers.get('Origin') not in (None, f'http://localhost:{self.server.server_port}', f'http://127.0.0.1:{self.server.server_port}'):
