@@ -19,6 +19,7 @@ try {
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(url);await page.locator('#historyChart svg').waitFor();
  const before=await (await page.request.get(url+'/api/state')).json();
+ await page.route('**/api/portfolio/targets?*',route=>route.fulfill({status:503,json:{error:'Synthetic outage'}}));
  await page.locator('[data-reinforcement="FIXTURE"]').first().click();
  await page.locator('#reinforcementForm [name=size]').fill('210');
  await page.locator('#reinforcementForm [name=fee]').fill('10');

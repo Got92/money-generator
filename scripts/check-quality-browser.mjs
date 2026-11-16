@@ -17,7 +17,7 @@ try {
  assert.equal((await page.request.put(url+'/api/state',{data:{revision:initial.revision,data:fixture}})).status(),200);
  await page.reload();await page.locator('[data-page="Watchlist"]').click();await page.locator('[data-company="SYNTH"]').click();await page.locator('#loadQuality').click();
  await page.getByText('100 / 100',{exact:false}).first().waitFor();assert.match(await page.locator('#qualityResult').innerText(),/Couverture/);assert.equal(await page.locator('#qualityResult svg').count(),1);
- await page.locator('input[name="growth"]').fill('15');await page.locator('input[name="cash"]').fill('25');await page.getByText('Enregistrer les pondérations').click();await page.waitForFunction(()=>document.querySelector('input[name="cash"]')?.value==='25');
+ await page.locator('#qualityWeights input[name="growth"]').fill('15');await page.locator('#qualityWeights input[name="cash"]').fill('25');await page.getByText('Enregistrer les pondérations').click();await page.waitForFunction(()=>document.querySelector('#qualityWeights input[name="cash"]')?.value==='25');
  await page.reload();await page.locator('[data-page="Watchlist"]').click();await page.locator('[data-company="SYNTH"]').click();await page.locator('#loadQuality').click();await page.waitForSelector('input[name="cash"]');assert.equal(await page.locator('input[name="cash"]').inputValue(),'25');
  const state=await (await page.request.get(url+'/api/state')).json();
  state.data.marketData.PEER={name:'Autre fixture',source:'Fixture',fetchedAt:'2024-12-31',sector:'Technology',metrics:{}};
