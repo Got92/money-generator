@@ -71,3 +71,7 @@ Le TWR autonome garde sa fenêtre initiale. Le graphique comparatif et les deux 
 ### Diversification
 
 Le Dashboard affiche les secteurs sur la base des positions investies. Dans **Analytics & Risk**, la base peut inclure les liquidités : les allocations par secteur, industrie, devise de cotation, pays du profil et classe d'actifs utilisent alors la valeur signée des liquidités. Un découvert peut produire des poids négatifs ou supérieurs à 100 %. Une base nulle ou négative, ou une valeur nécessaire sans cours ou taux de change, rend les pourcentages indisponibles. Les classifications manquantes sont regroupées sous « Non renseigné ». La classe d'actifs provient du type communiqué par Yahoo lors de la mise à jour de la fiche ; les anciennes fiches restent inconnues jusqu'à actualisation. La devise de cotation et le pays du profil ne sont pas des expositions économiques ; aucune transparence des fonds n'est supposée.
+
+### États financiers historiques
+
+Dans une fiche entreprise, chargez les états annuels ou trimestriels, actualisez-les et exportez le résultat JSON. La couverture affichée correspond aux périodes réellement obtenues auprès de Yahoo Finance ; les champs et dates de publication indisponibles restent inconnus. Les signes des flux sont conservés tels que fournis. Les données et leurs révisions sont persistées dans SQLite ; l'export JSON des portefeuilles ne sauvegarde pas ces historiques. Détails de l'API, de la migration et des limites : [PR 05 — historiques fondamentaux](docs/pr-05-fundamentals.md).

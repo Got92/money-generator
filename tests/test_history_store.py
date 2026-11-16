@@ -151,7 +151,7 @@ class HistoryTest(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT count(*) FROM fx_rates').fetchone()[0], 1)
                 self.assertEqual(db.execute('SELECT count(*) FROM fx_observations').fetchone()[0], 2)
                 self.assertIsNone(db.execute('SELECT fetched_at FROM fx_observations LIMIT 1').fetchone()[0])
-                self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0], 1)
+                self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0], 2)
         with patch.object(market, 'price_history', side_effect=market.MarketError('Panne.')):
             result = self.cache.prices('IBM')
             self.assertEqual(result['data'][0]['source'], 'Legacy')

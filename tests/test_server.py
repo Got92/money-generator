@@ -71,7 +71,7 @@ class StorageTest(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM prices').fetchone()[0],1)
             self.assertEqual(db.execute('SELECT count(*) FROM fx_rates').fetchone()[0],0)
             self.assertEqual(db.execute('SELECT rate FROM fx_observations').fetchone()[0],0.9)
-            self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0],1)
+            self.assertEqual(db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0],2)
             self.assertNotIn('fxRates',json.loads(db.execute('SELECT payload FROM state').fetchone()[0]))
     def test_api_refresh_failure_and_invalid_symbols(self):
         base=self.url.rsplit('/api/state',1)[0]
