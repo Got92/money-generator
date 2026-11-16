@@ -6,7 +6,8 @@ export function calculateAllocation(positions, cashEntries, field, basis='invest
  if(basis==='total') entries.push(...cashEntries.map(c=>({value:c.value, category:field==='currency'?c.currency:'Liquidités', cash:field!=='currency'})));
  if(entries.some(e=>!Number.isFinite(e.value))) return {status:'missing', denominator:null, groups:[]};
  const denominator=entries.reduce((sum,e)=>sum+e.value,0);
- if(!Number.isFinite(denominator)||denominator<=0) return {status:'nonpositive', denominator, groups:[]};
+ if(!Number.isFinite(denominator)) return {status:'missing', denominator:null, groups:[]};
+ if(denominator<=0) return {status:'nonpositive', denominator, groups:[]};
  const groups=new Map();
  for(const e of entries){
   const category=typeof e.category==='string'&&e.category.trim()?e.category.trim():null;
