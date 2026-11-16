@@ -1,17 +1,25 @@
 const EPS=1e-9;
 function numeric(value){const n=Number(value);return Number.isFinite(n)?n:NaN}
 function validDate(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s||''))return false;const d=new Date(s+'T00:00:00Z');return !Number.isNaN(d.valueOf())&&d.toISOString().slice(0,10)===s}
-export function positions(transactions, portfolioId, quotes, includeClosed=false) {
+// Rates are units of portfolio currency per unit of transaction currency, dated on or before the flow.
+export function fxRate(rates, currency='EUR', base='EUR', date='9999-12-31'){
+ if(currency===base)return 1;
+ const matches=(rates||[]).filter(r=>r.from===currency&&r.to===base&&r.date<=date&&Number.isFinite(Number(r.rate))&&Number(r.rate)>0).sort((a,b)=>b.date.localeCompare(a.date));
+ return matches.length?Number(matches[0].rate):null;
+}
+export function positions(transactions, portfolioId, quotes, includeClosed=false, rates=[], base='EUR') {
  const map = new Map();
  for (const t of transactions.filter(x => x.portfolioId === portfolioId).sort((a,b)=>a.date.localeCompare(b.date))) {
   if (!['buy','sell'].includes(t.type)) continue;
   const p=map.get(t.ticker)||{ticker:t.ticker, quantity:0, cost:0, realized:0};
-  const q=numeric(t.quantity), price=numeric(t.price), fee=numeric(t.fee||0);
+  const q=numeric(t.quantity), price=numeric(t.price), fee=numeric(t.fee||0), rate=fxRate(rates,t.currency||base,base,t.date);
   if(!Number.isFinite(q)||!Number.isFinite(price)||!Number.isFinite(fee)||q<=0||price<=0||fee<0) throw Error(`Transaction invalide : ${t.ticker}`);
-  if(t.type==='buy'){p.quantity+=q;p.cost+=q*price+fee} else {if(q>p.quantity+EPS) throw Error(`Vente supérieure à la position : ${t.ticker}`); const basis=p.quantity ? p.cost*q/p.quantity : 0; p.realized+=q*price-fee-basis;p.quantity-=q;p.cost-=basis;if(Math.abs(p.quantity)<EPS){p.quantity=0;p.cost=0}}
+  if(t.type==='buy'){p.quantity+=q;p.cost=p.cost===null||rate===null?null:p.cost+(q*price+fee)*rate} else {if(q>p.quantity+EPS) throw Error(`Vente supérieure à la position : ${t.ticker}`); const basis=p.cost===null?null:(p.quantity ? p.cost*q/p.quantity : 0); p.realized=p.realized===null||basis===null||rate===null?null:p.realized+(q*price-fee)*rate-basis;p.quantity-=q;p.cost=basis===null?null:p.cost-basis;if(Math.abs(p.quantity)<EPS){p.quantity=0;p.cost=0}}
   map.set(t.ticker,p);
  }
- return [...map.values()].filter(p=>includeClosed||p.quantity>EPS).map(p=>{const quote=quotes[p.ticker];const value=quote && Number.isFinite(quote.price) ? p.quantity*quote.price : null;return {...p,average:p.quantity?p.cost/p.quantity:null,quote,value,unrealized:value===null?null:value-p.cost}});
+ return [...map.values()].filter(p=>includeClosed||p.quantity>EPS).map(p=>{const quote=quotes[p.ticker];const rate=quote?fxRate(rates,quote.currency||base,base,quote.priceDate||'9999-12-31'):null;const value=quote && Number.isFinite(quote.price)&&rate!==null ? p.quantity*quote.price*rate : null;return {...p,average:p.quantity&&p.cost!==null?p.cost/p.quantity:null,quote,value,unrealized:value===null||p.cost===null?null:value-p.cost}});
 }
-export function cashBalance(transactions, id){return transactions.filter(t=>t.portfolioId===id).reduce((a,t)=>{let q=numeric(t.quantity||0),p=numeric(t.price||0),f=numeric(t.fee||0),v=numeric(t.amount||0);return a+({deposit:v,withdrawal:-v,dividend:v,buy:-q*p-f,sell:q*p-f}[t.type]||0)},0)}
-export function validateTransaction(t, transactions){if(!validDate(t.date)||!t.portfolioId) throw Error('Date valide et portefeuille requis.');if(!['buy','sell','deposit','withdrawal','dividend'].includes(t.type)) throw Error('Type invalide.');if(['buy','sell'].includes(t.type)){if(!t.ticker||!Number.isFinite(numeric(t.quantity))||!(numeric(t.quantity)>0)||!Number.isFinite(numeric(t.price))||!(numeric(t.price)>0)||!Number.isFinite(numeric(t.fee||0))||numeric(t.fee||0)<0) throw Error('Ticker, quantité, prix et frais valides requis.');positions([...transactions,t],t.portfolioId,{});}else if(!Number.isFinite(numeric(t.amount))||!(numeric(t.amount)>0)) throw Error('Montant positif requis.');}
+export function cashBalance(transactions, id, rates=[], base='EUR'){return transactions.filter(t=>t.portfolioId===id).reduce((a,t)=>{let q=numeric(t.quantity||0),p=numeric(t.price||0),f=numeric(t.fee||0),v=numeric(t.amount||0),rate=fxRate(rates,t.currency||base,base,t.date);return a===null||rate===null?null:a+({deposit:v,withdrawal:-v,dividend:v,buy:-q*p-f,sell:q*p-f}[t.type]||0)*rate},0)}
+function validateTransactionFields(t){if(!validDate(t.date)||!t.portfolioId) throw Error('Date valide et portefeuille requis.');if(t.currency&&!/^[A-Z]{3}$/.test(t.currency))throw Error('Devise invalide (code ISO à trois lettres requis).');if(!['buy','sell','deposit','withdrawal','dividend'].includes(t.type)) throw Error('Type invalide.');if(['buy','sell'].includes(t.type)){if(!t.ticker||!Number.isFinite(numeric(t.quantity))||!(numeric(t.quantity)>0)||!Number.isFinite(numeric(t.price))||!(numeric(t.price)>0)||!Number.isFinite(numeric(t.fee||0))||numeric(t.fee||0)<0) throw Error('Ticker, quantité, prix et frais valides requis.');}else if(!Number.isFinite(numeric(t.amount))||!(numeric(t.amount)>0)) throw Error('Montant positif requis.');}
+export function validateTransaction(t, transactions){validateTransactionFields(t);positions([...transactions,t],t.portfolioId,{});}
+export function validateTransactions(transactions){for(const t of transactions)validateTransactionFields(t);for(const id of new Set(transactions.map(t=>t.portfolioId)))positions(transactions,id,{});}

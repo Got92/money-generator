@@ -83,3 +83,18 @@ def company(symbol):
             'latestQuarter':date_utc(info.get('mostRecentQuarter')), 'metrics':metrics,
             'warnings':warnings, 'source':'Yahoo Finance (yfinance)',
             'fetchedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+
+def fx_history(source, target):
+    if not all(isinstance(c,str) and re.fullmatch(r'[A-Z]{3}',c) for c in (source,target)) or source==target:
+        raise MarketError('Paire de devises invalide.')
+    try:
+        history=yf.Ticker(source+target+'=X').history(period='max', interval='1d', auto_adjust=False, timeout=12, raise_errors=True)
+        rates=[]
+        for day, row in history.iterrows():
+            rate=num(row.get('Close'))
+            if rate is not None and rate>0:
+                rates.append({'from':source,'to':target,'date':day.date().isoformat(),'rate':rate,'source':'Yahoo Finance (yfinance)'})
+        if not rates: raise ValueError('Historique vide')
+        return rates
+    except Exception:
+        raise MarketError('Historique de change Yahoo Finance indisponible pour cette paire.') from None

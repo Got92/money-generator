@@ -31,4 +31,16 @@ class ProviderTest(unittest.TestCase):
         with patch.object(market.yf,'Search',side_effect=Exception('internal detail')):
             with self.assertRaises(market.MarketError) as ctx:market.search('IBM')
             self.assertNotIn('internal detail',str(ctx.exception))
+    def test_fx_history_maps_closes_and_rejects_unavailable(self):
+        import pandas as pd
+        history=pd.DataFrame({'Close':[0.91,0.92]},index=pd.to_datetime(['2024-01-02','2024-01-03']))
+        with patch.object(market.yf,'Ticker') as ticker:
+            ticker.return_value.history.return_value=history
+            rates=market.fx_history('USD','EUR')
+            ticker.assert_called_once_with('USDEUR=X')
+            self.assertEqual(rates[0]['rate'],0.91)
+            self.assertEqual(rates[0]['date'],'2024-01-02')
+            ticker.return_value.history.return_value=history.iloc[0:0]
+            with self.assertRaises(market.MarketError): market.fx_history('USD','EUR')
+        with self.assertRaises(market.MarketError): market.fx_history('USD&bad','EUR')
 if __name__=='__main__':unittest.main()

@@ -1,3 +1,4 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {dcf} from '../src/valuation.js';
 test('DCF calcule les flux actualisés et déduit la dette',()=>{let x=dcf({fcf:100,growth:0,discount:.1,terminal:0,netDebt:100,shares:10});assert.ok(Math.abs(x-90)<1e-8)});
 test('DCF refuse les hypothèses incohérentes',()=>{assert.throws(()=>dcf({fcf:100,growth:.02,discount:.02,terminal:.02,netDebt:0,shares:10}));assert.throws(()=>dcf({fcf:100,growth:0,discount:.1,terminal:0,netDebt:0,shares:0}));});
+test('FCFE sans retrait de dette et projections annuelles',()=>{const inputs={projections:[100,110,120,130,140],discount:.1,terminal:.02,shares:10};const enterprise=dcf({...inputs,method:'FCFF',netDebt:100});const equity=dcf({...inputs,method:'FCFE'});assert.ok(Math.abs(equity-enterprise-10)<1e-9);assert.throws(()=>dcf({...inputs,method:'FCFE',netDebt:1}));assert.throws(()=>dcf({...inputs,projections:[1,2]}))});

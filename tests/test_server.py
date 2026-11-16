@@ -1,4 +1,4 @@
-import importlib.util, json, os, tempfile, threading, unittest, urllib.request, urllib.error
+import importlib.util, json, os, sqlite3, tempfile, threading, unittest, urllib.request, urllib.error
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 
@@ -25,4 +25,21 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(self.request('PUT',{'revision':0,'data':d})[0],409)
         self.assertEqual(self.request('PUT',{'revision':1,'data':{}})[0],400)
         self.assertEqual(self.request()[1]['data'],d)
+    def test_migration_preserves_original_and_all_fields(self):
+        old={'portfolios':[{'id':'p','name':'Ancien','currency':'EUR','extra':7}],'transactions':[{'id':'t','portfolioId':'p','date':'2024-01-01','type':'deposit','amount':100}],'watchlist':['IBM'],'unknown':{'keep':True},'marketData':{'IBM':{'price':10,'metrics':{'pe':2}}}}
+        with sqlite3.connect(server.DB) as db:
+            db.execute('CREATE TABLE state (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL)')
+            db.execute('INSERT INTO state VALUES(1,4,?)',(json.dumps(old),))
+        status, result=self.request()
+        self.assertEqual((status,result['revision'],result['data']),(200,4,old))
+        with sqlite3.connect(server.DB) as db:
+            self.assertEqual(json.loads(db.execute('SELECT payload FROM state').fetchone()[0]),old)
+            self.assertEqual(db.execute('SELECT count(*) FROM transactions').fetchone()[0],1)
+            self.assertEqual(db.execute('SELECT count(*) FROM fundamentals').fetchone()[0],1)
+    def test_rejects_invalid_chronology_atomically(self):
+        data={'portfolios':[{'id':'p','name':'PEA','currency':'EUR'}],'watchlist':[],'transactions':[{'id':'b','portfolioId':'p','date':'2024-01-01','type':'buy','ticker':'A','quantity':2,'price':10},{'id':'s','portfolioId':'p','date':'2024-01-02','type':'sell','ticker':'A','quantity':2,'price':10}]}
+        self.assertEqual(self.request('PUT',{'revision':0,'data':data})[0],200)
+        data['transactions'][0]['quantity']=1
+        self.assertEqual(self.request('PUT',{'revision':1,'data':data})[0],400)
+        self.assertEqual(self.request()[1]['data']['transactions'][0]['quantity'],2)
 if __name__=='__main__': unittest.main()
