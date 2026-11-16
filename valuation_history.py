@@ -32,7 +32,7 @@ def percentile(values, current):
 def valid_number(v): return isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v)
 
 def snapshot(profile, financials=None):
-    """Accept only a freshly sourced quote and explicitly reported provider ratios."""
+    """Use sourced provider ratios or comparable verified financial inputs."""
     try:
         at=dt.datetime.fromisoformat(profile['fetchedAt'])
         price_day=dt.date.fromisoformat(profile['priceDate'])
