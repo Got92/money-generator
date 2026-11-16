@@ -12,10 +12,10 @@ SOURCE = 'Yahoo Finance (yfinance)'
 # Each metric uses the first available Yahoo row; no substitutions across concepts.
 FIELDS = {
  'income': {'revenue':['Total Revenue'], 'gross_profit':['Gross Profit'], 'ebitda':['EBITDA'],
- 'ebit':['EBIT'], 'net_income':['Net Income'], 'diluted_eps':['Diluted EPS'],
+ 'ebit':['EBIT'], 'interest_expense':['Interest Expense'], 'tax_expense':['Tax Provision'], 'pretax_income':['Pretax Income'], 'net_income':['Net Income'], 'diluted_eps':['Diluted EPS'],
  'diluted_average_shares':['Diluted Average Shares']},
  'balance': {'assets':['Total Assets'], 'equity':['Stockholders Equity'],
- 'cash':['Cash And Cash Equivalents'], 'short_debt':['Current Debt'],
+ 'invested_capital':['Invested Capital'], 'cash':['Cash And Cash Equivalents'], 'short_debt':['Current Debt'],
  'long_debt':['Long Term Debt'], 'net_debt':['Net Debt'], 'working_capital':['Working Capital']},
  'cashflow': {'operating_cash_flow':['Operating Cash Flow'], 'capex':['Capital Expenditure'],
  'free_cash_flow':['Free Cash Flow'], 'stock_based_compensation':['Stock Based Compensation'],

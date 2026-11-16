@@ -6,6 +6,7 @@ from urllib.parse import urlsplit, parse_qs
 import market
 import history_store
 import fundamental_store
+import fundamental_metrics
 
 ROOT = Path(__file__).resolve().parent
 DB = Path(os.environ.get('ATLAS_DB', Path.home() / '.atlas-investment' / 'atlas.sqlite3')).expanduser()
@@ -113,6 +114,24 @@ class Handler(SimpleHTTPRequestHandler):
                 row=db.execute('SELECT revision,payload FROM state WHERE id=1').fetchone()
                 result={'revision':row[0], 'data':read_data(db,row[1])} if row else {'revision':0,'data':None}
             return self.respond(200,result)
+        if path=='/api/fundamentals/ratios':
+            params=parse_qs(urlsplit(self.path).query)
+            symbol=params.get('symbol',[''])[0]; period=params.get('period',['annual'])[0]; as_of=params.get('asOf',[None])[0]
+            try:
+                if period not in ('annual','quarterly','ttm'): raise ValueError('Période invalide.')
+                history=fundamental_history.get(symbol, 'quarterly' if period=='ttm' else period, False, as_of)
+                profile=None
+                # A persisted current snapshot is never used for a historical cutoff.
+                if as_of is None:
+                    with connect() as db:
+                        row=db.execute('SELECT payload FROM instruments WHERE upper(ticker)=?',(symbol.upper(),)).fetchone()
+                        if row:
+                            profile=json.loads(row[0])
+                            if not isinstance(profile,dict): profile=None
+                result=fundamental_metrics.calculate_fundamentals(history['data'],period,profile)
+                result.update(symbol=history['symbol'], asOf=as_of, fetch=history['fetch'])
+                return self.respond(200,result)
+            except ValueError as e: return self.respond(400,{'error':str(e)})
         if path=='/api/fundamentals/history':
             params=parse_qs(urlsplit(self.path).query)
             try: return self.respond(200,fundamental_history.get(params.get('symbol',[''])[0],params.get('period',['annual'])[0],params.get('refresh',['0'])[0]=='1',params.get('asOf',[None])[0]))
@@ -138,7 +157,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond(200,{'data':result})
             except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path.startswith('/api/'): return self.respond(404,{'error':'Introuvable'})
-        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js'): return self.send_error(404)
+        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/allocation.js','/src/allocation-provenance.js','/src/analytics.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-periods.js','/src/xirr.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js','/src/benchmarks.js','/src/fundamental-ui.js','/src/company-dashboard.js'): return self.send_error(404)
         super().do_GET()
     def do_PUT(self):
         if self.path!='/api/state': return self.respond(404,{'error':'Introuvable'})
