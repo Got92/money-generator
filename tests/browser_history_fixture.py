@@ -33,11 +33,13 @@ def downloaded(kind):
 
 
 def prices(symbol, **kwargs):
-    assert symbol in ('FIXTURE','FIXTURE.STALE','^GSPC')
+    assert symbol in ('FIXTURE','FIXTURE.STALE','^GSPC','^SP500TR','URTH','^NDX')
     downloaded('prices')
     if symbol == 'FIXTURE.STALE':
         return [{'ticker':symbol,'date':old_day,'price':100,'currency':'USD'}]
-    if symbol == '^GSPC':
+    if symbol == '^NDX':
+        raise market.MarketError('Indice de test indisponible.')
+    if symbol in ('^GSPC','^SP500TR','URTH'):
         return [{'ticker':symbol,'date':day,'price':100+i,'currency':'EUR'} for i,day in enumerate(days)]
     return [{'ticker':symbol,'date':day,'price':100+i,'currency':'USD'} for i,day in enumerate(days)]
 
