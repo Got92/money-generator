@@ -14,7 +14,7 @@ FIELDS = {
  'income': {'revenue':['Total Revenue'], 'gross_profit':['Gross Profit'], 'ebitda':['EBITDA'],
  'ebit':['EBIT'], 'interest_expense':['Interest Expense'], 'tax_expense':['Tax Provision'], 'pretax_income':['Pretax Income'], 'net_income':['Net Income'], 'diluted_eps':['Diluted EPS'],
  'diluted_average_shares':['Diluted Average Shares']},
- 'balance': {'assets':['Total Assets'], 'equity':['Stockholders Equity'],
+ 'balance': {'current_assets':['Current Assets'], 'current_liabilities':['Current Liabilities'], 'assets':['Total Assets'], 'equity':['Stockholders Equity'],
  'invested_capital':['Invested Capital'], 'cash':['Cash And Cash Equivalents'], 'short_debt':['Current Debt'],
  'long_debt':['Long Term Debt'], 'net_debt':['Net Debt'], 'working_capital':['Working Capital']},
  'cashflow': {'operating_cash_flow':['Operating Cash Flow'], 'capex':['Capital Expenditure'],
