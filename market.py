@@ -98,3 +98,44 @@ def fx_history(source, target):
         return rates
     except Exception:
         raise MarketError('Historique de change Yahoo Finance indisponible pour cette paire.') from None
+
+def price_history(symbol):
+    if not isinstance(symbol,str) or not re.fullmatch(r'[A-Za-z0-9.\-^=]{1,32}',symbol):
+        raise MarketError('Symbole invalide.')
+    symbol=symbol.upper()
+    try:
+        ticker=yf.Ticker(symbol)
+        history=ticker.history(period='max',interval='1d',auto_adjust=False,timeout=12,raise_errors=True)
+        currency=ticker.history_metadata.get('currency')
+        if not isinstance(currency,str) or not re.fullmatch(r'[A-Z]{3}',currency):
+            raise ValueError('Devise inconnue')
+        rows=[]
+        for day,row in history.iterrows():
+            price=num(row.get('Close'))
+            if price is not None and price>0:
+                rows.append({'ticker':symbol,'date':day.date().isoformat(),'price':price,'currency':currency})
+        if not rows: raise ValueError('Historique vide')
+        return rows
+    except Exception:
+        raise MarketError('Historique de cours Yahoo Finance indisponible ou devise inconnue pour '+symbol+'.') from None
+
+def intraday(symbol):
+    """Most recent Yahoo session, five-minute bars with UTC timestamps."""
+    if not isinstance(symbol,str) or not re.fullmatch(r'[A-Za-z0-9.\-^=]{1,32}',symbol):
+        raise MarketError('Symbole invalide.')
+    symbol=symbol.upper()
+    try:
+        ticker=yf.Ticker(symbol)
+        history=ticker.history(period='1d',interval='5m',auto_adjust=False,prepost=False,timeout=12,raise_errors=True)
+        currency=ticker.history_metadata.get('currency')
+        if not isinstance(currency,str) or not re.fullmatch(r'[A-Z]{3}',currency): raise ValueError('Devise inconnue')
+        rows=[]
+        for stamp,row in history.iterrows():
+            price=num(row.get('Close'))
+            if price is not None and price>0 and stamp.tzinfo is not None:
+                rows.append({'timestamp':stamp.tz_convert('UTC').isoformat().replace('+00:00','Z'),'price':price,'sessionDate':stamp.date().isoformat()})
+        if not rows: raise ValueError('Séance indisponible')
+        latest=max(row['sessionDate'] for row in rows)
+        return {'symbol':symbol,'currency':currency,'sessionDate':latest,'interval':'5m','source':'Yahoo Finance (yfinance)','points':[row for row in rows if row['sessionDate']==latest]}
+    except Exception:
+        raise MarketError('Données intrajournalières Yahoo Finance indisponibles pour '+symbol+'.') from None

@@ -1,0 +1,7 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {intradayPortfolio,intradayBenchmark} from '../src/intraday.js';
+const t=(time,price)=>({timestamp:`2024-01-02T${time}:00Z`,price});
+const tx=[{portfolioId:'p',date:'2024-01-01',type:'deposit',amount:100,currency:'EUR'},{portfolioId:'p',date:'2024-01-01',type:'buy',ticker:'A',quantity:1,price:100,currency:'EUR'}];
+test('reconstruit la valeur avec des cours intrajournaliers horodatés',()=>{const data={A:{currency:'EUR',sessionDate:'2024-01-02',points:[t('10:00',100),t('10:05',102)]}};const r=intradayPortfolio(tx,'p',data,[],'converted','2024-01-02');assert.deepEqual(r.map(p=>p.value),[100,102]);assert.throws(()=>intradayPortfolio([...tx,{portfolioId:'p',date:'2024-01-02',type:'deposit',amount:5}], 'p',data,[],'converted','2024-01-02'),/heure/)});
+test('utilise le change intrajournalier antérieur, jamais futur',()=>{const data={A:{currency:'USD',sessionDate:'2024-01-02',points:[t('10:00',100),t('10:05',100)]},'USDEUR=X':{points:[t('10:05',.9)]}};const r=intradayPortfolio(tx,'p',data,[],'converted','2024-01-02');assert.deepEqual(r.map(p=>p.value),[null,90]);assert.deepEqual(intradayBenchmark(r,data,'A'),[null,90])});
+test('refuse des séances de marché différentes',()=>{const data={A:{currency:'EUR',sessionDate:'2024-01-01',points:[t('10:00',100)]}};assert.throws(()=>intradayPortfolio(tx,'p',data,[],'converted','2024-01-02'),/même date/)});

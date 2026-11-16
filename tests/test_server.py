@@ -1,4 +1,5 @@
 import importlib.util, json, os, sqlite3, tempfile, threading, unittest, urllib.request, urllib.error
+from unittest.mock import patch
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 
@@ -42,4 +43,30 @@ class StorageTest(unittest.TestCase):
         data['transactions'][0]['quantity']=1
         self.assertEqual(self.request('PUT',{'revision':1,'data':data})[0],400)
         self.assertEqual(self.request()[1]['data']['transactions'][0]['quantity'],2)
+    def test_history_is_returned_without_server_storage(self):
+        base=self.url.rsplit('/api/state',1)[0]
+        row={'ticker':'IBM','date':'2024-01-02','price':120,'currency':'USD'}
+        with patch.object(server.market,'price_history',return_value=[row]) as provider:
+            for _ in range(2):
+                with urllib.request.urlopen(base+'/api/market/history?symbol=IBM') as response: self.assertEqual(json.load(response)['data'][0]['price'],120)
+            self.assertEqual(provider.call_count,2)
+        self.assertFalse(server.DB.exists())
+    def test_existing_history_removed_and_never_saved(self):
+        data={'portfolios':[{'id':'p','name':'P','currency':'EUR'}],'transactions':[],'watchlist':[],'fxRates':[{'from':'USD','to':'EUR','date':'2024-01-01','rate':0.9}]}
+        with sqlite3.connect(server.DB) as db:
+            db.execute('CREATE TABLE state (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL)')
+            db.execute('INSERT INTO state VALUES(1,1,?)',(json.dumps(data),))
+            db.execute('CREATE TABLE prices (ticker TEXT NOT NULL,date TEXT NOT NULL,price REAL NOT NULL,currency TEXT NOT NULL,provider TEXT NOT NULL,fetched_at TEXT NOT NULL,PRIMARY KEY(ticker,date,provider))')
+            db.execute("INSERT INTO prices VALUES('IBM','2024-01-01',100,'USD','old','now')")
+        self.assertNotIn('fxRates',self.request()[1]['data'])
+        self.assertEqual(self.request('PUT',{'revision':1,'data':data})[0],200)
+        with sqlite3.connect(server.DB) as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM prices').fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT count(*) FROM fx_rates').fetchone()[0],0)
+            self.assertNotIn('fxRates',json.loads(db.execute('SELECT payload FROM state').fetchone()[0]))
+    def test_exchange_requires_multicurrency_account(self):
+        data={'portfolios':[{'id':'p','name':'P','currency':'EUR','cashMode':'multi'}], 'transactions':[{'id':'x','portfolioId':'p','date':'2024-01-02','type':'exchange','currency':'EUR','amount':90,'targetCurrency':'USD','targetAmount':100}], 'watchlist':[]}
+        self.assertEqual(self.request('PUT',{'revision':0,'data':data})[0],200)
+        data['portfolios'][0]['cashMode']='converted'
+        self.assertEqual(self.request('PUT',{'revision':1,'data':data})[0],400)
 if __name__=='__main__': unittest.main()

@@ -26,6 +26,14 @@ def connect():
             row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
             if row: write_collections(db,json.loads(row[0]))
             db.execute("INSERT INTO schema_meta VALUES('normalized_v1','1')")
+        if not db.execute("SELECT 1 FROM schema_meta WHERE key='ephemeral_history_v1'").fetchone():
+            db.execute('DELETE FROM prices')
+            db.execute('DELETE FROM fx_rates')
+            row=db.execute('SELECT payload FROM state WHERE id=1').fetchone()
+            if row:
+                state=json.loads(row[0]); state.pop('fxRates',None)
+                db.execute('UPDATE state SET payload=? WHERE id=1',(json.dumps(state,ensure_ascii=False,allow_nan=False),))
+            db.execute("INSERT INTO schema_meta VALUES('ephemeral_history_v1','1')")
     return db
 
 def write_collections(db, data):
@@ -37,10 +45,6 @@ def write_collections(db, data):
     for ticker, item in data.get('marketData',{}).items():
         db.execute('INSERT INTO instruments VALUES(?,?)',(ticker,dump(item)))
         if isinstance(item,dict) and 'metrics' in item: db.execute('INSERT INTO fundamentals VALUES(?,?)',(ticker,dump(item['metrics'])))
-        if isinstance(item,dict) and item.get('priceDate') and item.get('currency') and item.get('price') and item.get('source') and item.get('fetchedAt'):
-            db.execute('INSERT OR REPLACE INTO prices VALUES(?,?,?,?,?,?)',(ticker,item['priceDate'],item['price'],item['currency'],item['source'],item['fetchedAt']))
-    for r in data.get('fxRates',[]):
-        db.execute('INSERT OR REPLACE INTO fx_rates VALUES(?,?,?,?,?)',(r['from'],r['to'],r['date'],r['rate'],dump(r)))
 
 def read_data(db, payload):
     data=json.loads(payload)
@@ -48,7 +52,7 @@ def read_data(db, payload):
     data['transactions']=[json.loads(r[0]) for r in db.execute('SELECT payload FROM transactions ORDER BY ordinal')]
     data['watchlist']=[r[0] for r in db.execute('SELECT ticker FROM watchlists ORDER BY ordinal')]
     if 'marketData' in data: data['marketData']={r[0]:json.loads(r[1]) for r in db.execute('SELECT ticker,payload FROM instruments')}
-    if 'fxRates' in data: data['fxRates']=[json.loads(r[0]) for r in db.execute('SELECT payload FROM fx_rates ORDER BY rowid')]
+    data.pop('fxRates',None)
     return data
 
 def valid(data):
@@ -77,6 +81,10 @@ def valid(data):
                 key=(t['portfolioId'],ticker); held=positions.get(key,0)
                 if kind=='sell' and q>held+1e-9: raise ValueError('Vente supérieure à la position : '+ticker)
                 positions[key]=held+(q if kind=='buy' else -q)
+            elif kind=='exchange':
+                target=t.get('targetCurrency'); amount=float(t['amount']); target_amount=float(t['targetAmount'])
+                portfolio=next(p for p in data['portfolios'] if p['id']==t['portfolioId'])
+                if portfolio.get('cashMode')!='multi' or not isinstance(target,str) or not re.fullmatch(r'[A-Z]{3}',target) or target==currency or not all(math.isfinite(x) and x>0 for x in (amount,target_amount)): raise ValueError('Change invalide.')
             elif kind in ('deposit','withdrawal','dividend'):
                 amount=float(t['amount'])
                 if not math.isfinite(amount) or amount<=0: raise ValueError()
@@ -104,6 +112,14 @@ class Handler(SimpleHTTPRequestHandler):
                 row=db.execute('SELECT revision,payload FROM state WHERE id=1').fetchone()
                 result={'revision':row[0], 'data':read_data(db,row[1])} if row else {'revision':0,'data':None}
             return self.respond(200,result)
+        if path=='/api/market/history':
+            params=parse_qs(urlsplit(self.path).query)
+            try: return self.respond(200,{'data':market.price_history(params.get('symbol',[''])[0])})
+            except market.MarketError as e: return self.respond(503,{'error':str(e)})
+        if path=='/api/market/intraday':
+            params=parse_qs(urlsplit(self.path).query)
+            try: return self.respond(200,{'data':market.intraday(params.get('symbol',[''])[0])})
+            except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path=='/api/market/fx':
             params=parse_qs(urlsplit(self.path).query)
             try: return self.respond(200,{'data':market.fx_history(params.get('from',[''])[0],params.get('to',[''])[0])})
@@ -115,7 +131,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.respond(200,{'data':result})
             except market.MarketError as e: return self.respond(503,{'error':str(e)})
         if path.startswith('/api/'): return self.respond(404,{'error':'Introuvable'})
-        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/portfolios.js','/src/research.js','/src/watchlist.js'): return self.send_error(404)
+        if path not in ('/','/index.html','/style.css','/src/app.js','/src/data.js','/src/finance.js','/src/valuation.js','/src/valuation-ui.js','/src/csv.js','/src/dashboard.js','/src/portfolios.js','/src/research.js','/src/watchlist.js','/src/performance.js','/src/performance-ui.js','/src/intraday.js','/src/session-market.js'): return self.send_error(404)
         super().do_GET()
     def do_PUT(self):
         if self.path!='/api/state': return self.respond(404,{'error':'Introuvable'})
@@ -124,7 +140,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             length=int(self.headers.get('Content-Length','0'))
             if length<=0 or length>5_000_000: raise ValueError('Taille de sauvegarde invalide.')
-            obj=json.loads(self.rfile.read(length)); data=obj['data']; valid(data); revision=obj['revision']
+            obj=json.loads(self.rfile.read(length)); data=obj['data']; valid(data); data={k:v for k,v in data.items() if k!='fxRates'}; revision=obj['revision']
             with lock, connect() as db:
                 row=db.execute('SELECT revision FROM state WHERE id=1').fetchone(); current=row[0] if row else 0
                 if revision!=current: return self.respond(409,{'error':'Les données ont changé dans un autre onglet. Rechargez avant de modifier.'})

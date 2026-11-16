@@ -43,4 +43,25 @@ class ProviderTest(unittest.TestCase):
             ticker.return_value.history.return_value=history.iloc[0:0]
             with self.assertRaises(market.MarketError): market.fx_history('USD','EUR')
         with self.assertRaises(market.MarketError): market.fx_history('USD&bad','EUR')
+    def test_price_history_validates_currency_and_closes(self):
+        import pandas as pd
+        history=pd.DataFrame({'Close':[10.0,11.0]},index=pd.to_datetime(['2024-01-02','2024-01-03']))
+        with patch.object(market.yf,'Ticker') as ticker:
+            ticker.return_value.history.return_value=history
+            ticker.return_value.history_metadata={'currency':'USD'}
+            rows=market.price_history('ibm')
+            self.assertEqual((rows[0]['ticker'],rows[0]['price'],rows[0]['currency']),('IBM',10,'USD'))
+            ticker.return_value.history_metadata={}
+            with self.assertRaises(market.MarketError): market.price_history('IBM')
+    def test_intraday_maps_timezone_aware_bars(self):
+        import pandas as pd
+        history=pd.DataFrame({'Close':[100.0,101.0]},index=pd.to_datetime(['2024-01-02 10:00','2024-01-02 10:05']).tz_localize('Europe/Paris'))
+        with patch.object(market.yf,'Ticker') as ticker:
+            ticker.return_value.history.return_value=history
+            ticker.return_value.history_metadata={'currency':'EUR'}
+            result=market.intraday('AI.PA')
+        self.assertEqual(result['interval'],'5m')
+        self.assertEqual(result['sessionDate'],'2024-01-02')
+        self.assertEqual(result['points'][0]['timestamp'],'2024-01-02T09:00:00Z')
+        self.assertEqual(result['points'][1]['price'],101)
 if __name__=='__main__':unittest.main()
